@@ -1,15 +1,26 @@
-import http from "node:http";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SENSITIVE_TOPIC_CATEGORIES } from "./lib/constants.js";
-import { buildScreeningReport } from "./lib/screeningEngine.js";
-import { loadReports, saveReport } from "./lib/storage.js";
+import { REALITY_FIELD_DEFS, SENSITIVE_TOPIC_CATEGORIES } from "./lib/constants.js";
+import {
+  getCandidatePool,
+  getCandidatePoolCount,
+  getDatabasePath,
+  getProfile,
+  listProfiles,
+  loadReports,
+  saveProfile,
+  saveReport
+} from "./lib/database.js";
+import { buildMatchReport, REPORT_SCHEMA_VERSION } from "./lib/matchingEngine.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.join(__dirname, "..", "public");
 const port = Number(process.env.PORT || 3000);
+const phase = "phase_1_matching_shortlist";
+const phaseLabel = "用户单侧建档与数据库初筛";
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
@@ -24,19 +35,23 @@ function sendText(response, statusCode, body, contentType = "text/plain; charset
 function parseBody(request) {
   return new Promise((resolve, reject) => {
     let raw = "";
+
     request.on("data", (chunk) => {
       raw += chunk;
+
       if (raw.length > 1_000_000) {
         reject(new Error("请求体过大。"));
       }
     });
+
     request.on("end", () => {
       try {
         resolve(raw ? JSON.parse(raw) : {});
-      } catch (error) {
+      } catch {
         reject(new Error("JSON 请求体格式无效。"));
       }
     });
+
     request.on("error", reject);
   });
 }
@@ -50,11 +65,26 @@ function getContentType(filePath) {
   return "application/octet-stream";
 }
 
-function serveStatic(requestPath, response) {
-  const safePath = requestPath === "/" ? "/index.html" : requestPath;
-  const filePath = path.join(publicDir, safePath);
+function resolvePublicFile(requestPath) {
+  const normalizedPath = requestPath === "/" ? "/index.html" : path.posix.normalize(requestPath);
+  const filePath = path.resolve(publicDir, `.${normalizedPath}`);
+  const inPublicDir = filePath === publicDir || filePath.startsWith(`${publicDir}${path.sep}`);
 
-  if (!filePath.startsWith(publicDir) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+  if (!inPublicDir) {
+    return null;
+  }
+
+  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+    return null;
+  }
+
+  return filePath;
+}
+
+function serveStatic(requestPath, response) {
+  const filePath = resolvePublicFile(requestPath);
+
+  if (!filePath) {
     sendText(response, 404, "未找到页面。");
     return;
   }
@@ -62,30 +92,107 @@ function serveStatic(requestPath, response) {
   sendText(response, 200, fs.readFileSync(filePath), getContentType(filePath));
 }
 
+function extractProfileId(pathname) {
+  const prefix = "/api/profiles/";
+  return pathname.startsWith(prefix) ? decodeURIComponent(pathname.slice(prefix.length)) : "";
+}
+
+function requireTwinProfile(payload) {
+  if (!payload?.twinProfile || typeof payload.twinProfile !== "object") {
+    throw new Error("缺少 Twin 档案内容。");
+  }
+}
+
+function buildReportFromProfile(profileId, rawTwinProfile) {
+  const candidatePool = getCandidatePool();
+  const report = buildMatchReport({ twinProfile: rawTwinProfile }, { candidatePool });
+  return saveReport(report, profileId);
+}
+
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
 
   try {
     if (request.method === "GET" && url.pathname === "/api/health") {
-      sendJson(response, 200, { ok: true, phase: "phase_1_due_diligence" });
+      sendJson(response, 200, {
+        ok: true,
+        phase,
+        phaseLabel,
+        databasePath: getDatabasePath()
+      });
       return;
     }
 
     if (request.method === "GET" && url.pathname === "/api/config") {
-      sendJson(response, 200, { sensitiveTopicCategories: SENSITIVE_TOPIC_CATEGORIES });
+      sendJson(response, 200, {
+        phase,
+        phaseLabel,
+        reportSchemaVersion: REPORT_SCHEMA_VERSION,
+        candidatePoolSize: getCandidatePoolCount(),
+        sensitiveTopicCategories: SENSITIVE_TOPIC_CATEGORIES,
+        realityFieldDefs: REALITY_FIELD_DEFS
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/profiles") {
+      sendJson(response, 200, { profiles: listProfiles() });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname.startsWith("/api/profiles/")) {
+      const profileId = extractProfileId(url.pathname);
+      const profile = getProfile(profileId);
+
+      if (!profile) {
+        sendJson(response, 404, { error: "未找到该 Twin 档案。" });
+        return;
+      }
+
+      sendJson(response, 200, { profile });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/profiles") {
+      const payload = await parseBody(request);
+      requireTwinProfile(payload);
+      const profile = saveProfile({
+        id: payload.profileId || payload.id || "",
+        twinProfile: payload.twinProfile
+      });
+      sendJson(response, 201, { profile });
       return;
     }
 
     if (request.method === "GET" && url.pathname === "/api/reports") {
-      sendJson(response, 200, { reports: loadReports() });
+      sendJson(response, 200, {
+        reports: loadReports({
+          schemaVersion: REPORT_SCHEMA_VERSION,
+          profileId: url.searchParams.get("profileId") || ""
+        })
+      });
       return;
     }
 
     if (request.method === "POST" && url.pathname === "/api/reports") {
       const payload = await parseBody(request);
-      const report = buildScreeningReport(payload);
-      saveReport(report);
-      sendJson(response, 201, { report });
+      let profile = null;
+
+      if (payload.twinProfile) {
+        profile = saveProfile({
+          id: payload.profileId || "",
+          twinProfile: payload.twinProfile
+        });
+      } else if (payload.profileId) {
+        profile = getProfile(payload.profileId);
+      }
+
+      if (!profile) {
+        throw new Error("生成匹配报告前，需要先提供或保存 Twin 档案。");
+      }
+
+      const report = buildReportFromProfile(profile.id, profile.twinProfile);
+      sendJson(response, 201, { report, profile });
       return;
     }
 

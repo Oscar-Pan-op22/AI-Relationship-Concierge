@@ -11,19 +11,19 @@
       <header class="hero">
         <div class="hero-copy">
           <p class="eyebrow">同频 · Phase 1</p>
-          <h1>面向关系判断的 AI 尽调工作台</h1>
+          <h1>单侧建档、持久化档案与数据库匹配</h1>
           <p class="hero-text">
-            先构建用户的 Twin 画像，再录入单个候选人材料，把原始信息转换成可解释的筛选报告、风险提示和后续提问草稿。
+            当前版本已经从一次性表单升级为可保存的 Twin 档案工作台。你可以保存自己的档案、反复读取、重新匹配，并基于数据库候选池持续迭代画像。
           </p>
         </div>
         <div class="hero-panel">
           <div class="metric">
             <span class="metric-label">当前范围</span>
-            <strong>Twin 建档 → 候选人录入 → 尽调报告</strong>
+            <strong>保存 Twin 档案 → 从候选库匹配 → 输出 shortlist → 反复重跑</strong>
           </div>
           <div class="metric">
-            <span class="metric-label">输出内容</span>
-            <strong>匹配度、风险点、信息缺口、下一步建议</strong>
+            <span class="metric-label">下一阶段入口</span>
+            <strong>从 shortlist 进入 Twin 预沟通、敏感信息核实与真人交接</strong>
           </div>
           <button id="sample-button" class="secondary-button" type="button">载入示例</button>
         </div>
@@ -31,10 +31,11 @@
 
       <main class="layout">
         <section class="forms-column">
-          <form id="screening-form" class="panel form-panel">
+          <form id="matching-form" class="panel form-panel">
             <div class="panel-head">
-              <h2>Twin 建档</h2>
-              <p>这是所有判断和提问草稿的基准用户画像。</p>
+              <h2>用户建档</h2>
+              <p>当前匹配来自数据库候选池。你可以先保存档案，再随时重新匹配。</p>
+              <p id="profile-state-text" class="status-text">当前为未保存档案。</p>
             </div>
 
             <div class="field-grid">
@@ -44,23 +45,23 @@
               </label>
               <label>
                 <span>关系目标</span>
-                <input name="twinRelationshipGoal" placeholder="认真长期关系，目标是结婚" />
+                <input name="twinRelationshipGoal" placeholder="认真长期关系，希望以结婚为目标" />
               </label>
               <label>
                 <span>偏好城市</span>
-                <input name="twinCities" placeholder="上海，杭州" />
+                <input name="twinCities" placeholder="上海、杭州" />
               </label>
               <label>
-                <span>沟通风格</span>
-                <input name="twinCommunicationStyle" placeholder="直接、稳定回复、不喜欢模糊拉扯" />
+                <span>沟通风格偏好</span>
+                <input name="twinCommunicationStyle" placeholder="直接、稳定回复、不喜欢反复试探" />
               </label>
               <label>
                 <span>结婚时间预期</span>
-                <input name="twinMarriageTimeline" placeholder="如果匹配，最好 1 到 2 年内" />
+                <input name="twinMarriageTimeline" placeholder="如果匹配，希望 1 到 2 年内推进" />
               </label>
               <label>
                 <span>孩子与生育态度</span>
-                <input name="twinChildrenPreference" placeholder="希望未来要孩子，但不急着马上要" />
+                <input name="twinChildrenPreference" placeholder="希望未来要孩子，但不想立刻推进生育" />
               </label>
               <label>
                 <span>家庭边界</span>
@@ -68,7 +69,7 @@
               </label>
               <label>
                 <span>财务观</span>
-                <input name="twinFinancialView" placeholder="务实稳定，不接受隐性负债文化" />
+                <input name="twinFinancialView" placeholder="务实稳定，不接受隐性负债和冲动高消费" />
               </label>
             </div>
 
@@ -86,84 +87,55 @@
               <textarea
                 name="twinHardStops"
                 rows="3"
-                placeholder="早期借钱、赌博、结婚态度模糊"
+                placeholder="早期借钱、赌博、结婚态度长期模糊"
               ></textarea>
             </label>
 
             <label>
-              <span>用户补充画像</span>
+              <span>补充画像</span>
               <textarea
                 name="twinSelfSummary"
                 rows="4"
-                placeholder="除了表单项之外，希望 Twin 记住的关系偏好和判断逻辑"
+                placeholder="除了表单字段之外，希望 Twin 记住的判断逻辑、关系偏好和风险敏感点"
               ></textarea>
             </label>
+
+            <section class="reality-block">
+              <div class="section-head">
+                <div>
+                  <h3>我的现实情况</h3>
+                  <p>选填。进入 Twin 画像，但默认不会自动变成硬门槛。</p>
+                </div>
+                <span class="soft-tag">选填</span>
+              </div>
+              <div id="reality-self-fields" class="reality-grid"></div>
+            </section>
+
+            <section class="reality-block">
+              <div class="section-head">
+                <div>
+                  <h3>我对对方的现实条件偏好</h3>
+                  <p>选填。默认按软匹配处理，只有你显式设成“必须满足”或“不接受”时才升级为强约束。</p>
+                </div>
+                <span class="soft-tag">选填</span>
+              </div>
+              <div id="reality-preference-fields" class="preference-list"></div>
+            </section>
 
             <div class="consent-block">
               <div>
                 <h3>敏感议题授权</h3>
-                <p>当前 Phase 1 只生成提问草稿，但仍会按照授权策略标记敏感问题类别。</p>
+                <p>当前阶段不会直接发起聊天，但会决定 shortlist 通过后 Twin 可以核实哪些敏感议题。</p>
               </div>
               <div id="topic-checkboxes" class="checkbox-grid"></div>
             </div>
 
-            <div class="panel-head candidate-head">
-              <h2>候选人录入</h2>
-              <p>当前 Phase 1 只处理单个候选人的尽调流程。</p>
-            </div>
-
-            <div class="field-grid">
-              <label>
-                <span>候选人称呼</span>
-                <input name="candidateDisplayName" placeholder="林予安" />
-              </label>
-              <label>
-                <span>年龄</span>
-                <input name="candidateAge" placeholder="30" />
-              </label>
-              <label>
-                <span>所在城市</span>
-                <input name="candidateCity" placeholder="上海" />
-              </label>
-              <label>
-                <span>职业</span>
-                <input name="candidateOccupation" placeholder="产品经理" />
-              </label>
-              <label class="wide">
-                <span>候选人自述关系目标</span>
-                <input name="candidateRelationshipGoal" placeholder="想找认真长期关系" />
-              </label>
-            </div>
-
-            <label>
-              <span>资料文本</span>
-              <textarea
-                name="candidateProfileText"
-                rows="4"
-                placeholder="个人简介、自我介绍、结构化资料摘要"
-              ></textarea>
-            </label>
-
-            <label>
-              <span>聊天摘要</span>
-              <textarea
-                name="candidateChatSummary"
-                rows="4"
-                placeholder="只粘贴关键聊天片段，不需要完整聊天记录"
-              ></textarea>
-            </label>
-
-            <label>
-              <span>用户私人备注</span>
-              <textarea
-                name="candidateNotes"
-                rows="4"
-                placeholder="用户观察到的细节、顾虑、上下文"
-              ></textarea>
-            </label>
-
             <div class="actions">
-              <button class="primary-button" type="submit">生成尽调报告</button>
+              <button class="primary-button" type="submit">生成匹配报告</button>
+              <button id="save-profile-button" class="secondary-button" type="button">保存 Twin 档案</button>
+              <button id="new-profile-button" class="secondary-button" type="button">新建档案</button>
+            </div>
+            <div class="status-row">
               <span id="status-text" class="status-text">准备就绪。</span>
             </div>
           </form>
@@ -172,16 +144,24 @@
         <section class="report-column">
           <div id="report-shell" class="panel report-shell empty">
             <div class="empty-state">
-              <p class="eyebrow">报告输出</p>
-              <h2>还没有报告</h2>
-              <p>填写左侧信息并生成尽调报告后，这里会展示结构化分析结果。</p>
+              <p class="eyebrow">匹配输出</p>
+              <h2>还没有匹配结果</h2>
+              <p>保存或填写 Twin 档案后，系统会生成画像，并从数据库候选池中输出 shortlist。</p>
             </div>
           </div>
 
           <div class="panel history-shell">
             <div class="panel-head">
-              <h2>最近报告</h2>
-              <p>本地保存路径：<code>data/screenings.json</code></p>
+              <h2>已保存 Twin 档案</h2>
+              <p>可以载入档案继续修改，或直接基于已存档案重新匹配。</p>
+            </div>
+            <div id="profile-list" class="history-list"></div>
+          </div>
+
+          <div class="panel history-shell">
+            <div class="panel-head">
+              <h2>最近匹配报告</h2>
+              <p>报告已迁移到 SQLite 持久化存储。</p>
             </div>
             <div id="history-list" class="history-list"></div>
           </div>

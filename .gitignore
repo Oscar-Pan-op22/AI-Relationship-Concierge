@@ -1,4 +1,6 @@
 node_modules/
-data/screenings.json
+data/*.json
+data/*.sqlite
+data/*.sqlite-*
 Thumbs.db
 .DS_Store
