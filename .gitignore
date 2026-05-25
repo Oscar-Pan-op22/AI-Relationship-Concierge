@@ -1,0 +1,4 @@
+node_modules/
+data/screenings.json
+Thumbs.db
+.DS_Store

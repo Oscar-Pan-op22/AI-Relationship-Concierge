@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>同频 Phase 1 工作台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">同频 · Phase 1</p>
+          <h1>面向关系判断的 AI 尽调工作台</h1>
+          <p class="hero-text">
+            先构建用户的 Twin 画像，再录入单个候选人材料，把原始信息转换成可解释的筛选报告、风险提示和后续提问草稿。
+          </p>
+        </div>
+        <div class="hero-panel">
+          <div class="metric">
+            <span class="metric-label">当前范围</span>
+            <strong>Twin 建档 → 候选人录入 → 尽调报告</strong>
+          </div>
+          <div class="metric">
+            <span class="metric-label">输出内容</span>
+            <strong>匹配度、风险点、信息缺口、下一步建议</strong>
+          </div>
+          <button id="sample-button" class="secondary-button" type="button">载入示例</button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="forms-column">
+          <form id="screening-form" class="panel form-panel">
+            <div class="panel-head">
+              <h2>Twin 建档</h2>
+              <p>这是所有判断和提问草稿的基准用户画像。</p>
+            </div>
+
+            <div class="field-grid">
+              <label>
+                <span>用户称呼</span>
+                <input name="twinDisplayName" placeholder="雨涵" />
+              </label>
+              <label>
+                <span>关系目标</span>
+                <input name="twinRelationshipGoal" placeholder="认真长期关系，目标是结婚" />
+              </label>
+              <label>
+                <span>偏好城市</span>
+                <input name="twinCities" placeholder="上海，杭州" />
+              </label>
+              <label>
+                <span>沟通风格</span>
+                <input name="twinCommunicationStyle" placeholder="直接、稳定回复、不喜欢模糊拉扯" />
+              </label>
+              <label>
+                <span>结婚时间预期</span>
+                <input name="twinMarriageTimeline" placeholder="如果匹配，最好 1 到 2 年内" />
+              </label>
+              <label>
+                <span>孩子与生育态度</span>
+                <input name="twinChildrenPreference" placeholder="希望未来要孩子，但不急着马上要" />
+              </label>
+              <label>
+                <span>家庭边界</span>
+                <input name="twinFamilyBoundary" placeholder="尊重父母，但婚后更偏独立小家庭" />
+              </label>
+              <label>
+                <span>财务观</span>
+                <input name="twinFinancialView" placeholder="务实稳定，不接受隐性负债文化" />
+              </label>
+            </div>
+
+            <label>
+              <span>必须满足项</span>
+              <textarea
+                name="twinMustHaves"
+                rows="3"
+                placeholder="情绪稳定、明确想认真发展、能直接沟通"
+              ></textarea>
+            </label>
+
+            <label>
+              <span>硬性雷区</span>
+              <textarea
+                name="twinHardStops"
+                rows="3"
+                placeholder="早期借钱、赌博、结婚态度模糊"
+              ></textarea>
+            </label>
+
+            <label>
+              <span>用户补充画像</span>
+              <textarea
+                name="twinSelfSummary"
+                rows="4"
+                placeholder="除了表单项之外，希望 Twin 记住的关系偏好和判断逻辑"
+              ></textarea>
+            </label>
+
+            <div class="consent-block">
+              <div>
+                <h3>敏感议题授权</h3>
+                <p>当前 Phase 1 只生成提问草稿，但仍会按照授权策略标记敏感问题类别。</p>
+              </div>
+              <div id="topic-checkboxes" class="checkbox-grid"></div>
+            </div>
+
+            <div class="panel-head candidate-head">
+              <h2>候选人录入</h2>
+              <p>当前 Phase 1 只处理单个候选人的尽调流程。</p>
+            </div>
+
+            <div class="field-grid">
+              <label>
+                <span>候选人称呼</span>
+                <input name="candidateDisplayName" placeholder="林予安" />
+              </label>
+              <label>
+                <span>年龄</span>
+                <input name="candidateAge" placeholder="30" />
+              </label>
+              <label>
+                <span>所在城市</span>
+                <input name="candidateCity" placeholder="上海" />
+              </label>
+              <label>
+                <span>职业</span>
+                <input name="candidateOccupation" placeholder="产品经理" />
+              </label>
+              <label class="wide">
+                <span>候选人自述关系目标</span>
+                <input name="candidateRelationshipGoal" placeholder="想找认真长期关系" />
+              </label>
+            </div>
+
+            <label>
+              <span>资料文本</span>
+              <textarea
+                name="candidateProfileText"
+                rows="4"
+                placeholder="个人简介、自我介绍、结构化资料摘要"
+              ></textarea>
+            </label>
+
+            <label>
+              <span>聊天摘要</span>
+              <textarea
+                name="candidateChatSummary"
+                rows="4"
+                placeholder="只粘贴关键聊天片段，不需要完整聊天记录"
+              ></textarea>
+            </label>
+
+            <label>
+              <span>用户私人备注</span>
+              <textarea
+                name="candidateNotes"
+                rows="4"
+                placeholder="用户观察到的细节、顾虑、上下文"
+              ></textarea>
+            </label>
+
+            <div class="actions">
+              <button class="primary-button" type="submit">生成尽调报告</button>
+              <span id="status-text" class="status-text">准备就绪。</span>
+            </div>
+          </form>
+        </section>
+
+        <section class="report-column">
+          <div id="report-shell" class="panel report-shell empty">
+            <div class="empty-state">
+              <p class="eyebrow">报告输出</p>
+              <h2>还没有报告</h2>
+              <p>填写左侧信息并生成尽调报告后，这里会展示结构化分析结果。</p>
+            </div>
+          </div>
+
+          <div class="panel history-shell">
+            <div class="panel-head">
+              <h2>最近报告</h2>
+              <p>本地保存路径：<code>data/screenings.json</code></p>
+            </div>
+            <div id="history-list" class="history-list"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
