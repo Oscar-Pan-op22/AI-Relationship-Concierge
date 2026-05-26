@@ -16,7 +16,7 @@ export const MOCK_CANDIDATE_POOL = [
     summary:
       "长期在上海工作，目标清晰，偏认真长期关系，婚后倾向独立小家庭，消费观务实。",
     searchableText:
-      "上海 产品经理 认真长期 结婚 1到2年 独立小家庭 务实 理性消费 直接沟通 想要孩子 有房有贷 有车 收入稳定",
+      "上海 产品经理 认真长期 结婚 一到两年 独立小家庭 务实 理性消费 直接沟通 想要孩子 有房有贷 有车 收入稳定",
     riskTags: [],
     highlights: ["长期关系导向", "独立小家庭", "现实条件稳定"],
     incomeBand: "30k_to_50k",
@@ -45,7 +45,7 @@ export const MOCK_CANDIDATE_POOL = [
     summary:
       "生活节奏规律，长期目标明确，财务观与家庭边界偏稳健，但工作较忙，回复节奏不会太快。",
     searchableText:
-      "杭州 医生 认真长期 1到2年结婚 想要孩子 独立小家庭 务实 稳定沟通 已实名 有房无贷 独生子女",
+      "杭州 医生 认真长期 一到两年结婚 想要孩子 独立小家庭 务实 稳定沟通 已实名 有房无贷 独生子女",
     riskTags: [],
     highlights: ["长期目标清晰", "生活规律", "整体稳健"],
     incomeBand: "30k_to_50k",
@@ -103,7 +103,7 @@ export const MOCK_CANDIDATE_POOL = [
     summary:
       "关系目标非常明确，推进速度较快，但原生家庭参与度偏高，婚后边界需要重点确认。",
     searchableText:
-      "上海 销售总监 认真长期 1年内结婚 想要孩子 父母参与度高 务实 直接沟通 与父母同住 有车",
+      "上海 销售总监 认真长期 一年内结婚 想要孩子 父母参与度高 务实 直接沟通 与父母同住 有车",
     riskTags: ["family_led"],
     highlights: ["目标清晰", "现实推进意愿强", "城市一致"],
     incomeBand: "30k_to_50k",
@@ -132,7 +132,7 @@ export const MOCK_CANDIDATE_POOL = [
     summary:
       "结婚意愿很强，但家庭参与度较高，也更重视生活品质和消费体验，适合推进节奏偏快的人。",
     searchableText:
-      "上海 投研顾问 认真关系 1年内结婚 想要孩子 父母参与高 高消费 直接沟通 有房无贷 有车 独生子女",
+      "上海 投研顾问 认真关系 一年内结婚 想要孩子 父母参与高 高消费 直接沟通 有房无贷 有车 独生子女",
     riskTags: ["family_led", "status_spending"],
     highlights: ["结婚推进意愿强", "表达直接", "现实资源充足"],
     incomeBand: "50k_plus",
@@ -145,8 +145,8 @@ export const MOCK_CANDIDATE_POOL = [
     postMaritalLivingPreference: "prefer_with_parents"
   },
   {
-    id: "cand_tang_yiting",
-    displayName: "唐意婷",
+    id: "cand_tang_yining",
+    displayName: "唐意宁",
     age: 32,
     city: "深圳",
     occupation: "创业者",
@@ -158,10 +158,9 @@ export const MOCK_CANDIDATE_POOL = [
     communicationStyle: "direct",
     verificationLevel: "已实名",
     trustLevel: "medium",
-    summary:
-      "行动节奏快、结婚意愿强，但消费观偏激进，且异地迁移成本高。",
+    summary: "行动节奏快、结婚意愿强，但消费观偏激进，且异地迁移成本高。",
     searchableText:
-      "深圳 创业者 认真关系 1年内结婚 想要孩子 独立家庭 高消费 频繁出差 迁移成本高 有车 租房",
+      "深圳 创业者 认真关系 一年内结婚 想要孩子 独立家庭 高消费 频繁出差 迁移成本高 有车 租房",
     riskTags: ["status_spending", "high_mobility"],
     highlights: ["目标明确", "推进速度快", "跨城成本较高"],
     incomeBand: "50k_plus",

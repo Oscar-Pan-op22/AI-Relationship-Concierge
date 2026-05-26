@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>同频 · 待办箱</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">同频 · 待办箱</p>
+          <h1>邀请、敏感授权与人工补充</h1>
+          <p class="hero-text">
+            这里聚合所有需要当前用户亲自处理的事项，包括预沟通邀请、逐题敏感问题授权和人工补充信息。
+          </p>
+        </div>
+        <div class="hero-panel">
+          <div class="metric">
+            <span class="metric-label">当前登录</span>
+            <strong data-current-user>正在加载...</strong>
+          </div>
+          <nav class="nav-links">
+            <a class="secondary-button link-button" href="/">我的 Twin</a>
+            <a class="secondary-button link-button" href="/matches.html">双边匹配</a>
+            <a class="secondary-button link-button" href="/inbox.html">待办箱</a>
+            <button id="logout-button" class="secondary-button" type="button">退出登录</button>
+          </nav>
+        </div>
+      </header>
+
+      <main class="single-column">
+        <section class="panel report-shell">
+          <div class="panel-head">
+            <h2>待办列表</h2>
+            <p id="inbox-status" class="status-text">正在加载待办...</p>
+          </div>
+          <div id="inbox-list" class="stack-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/inbox.js"></script>
+  </body>
+</html>

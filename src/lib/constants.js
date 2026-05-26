@@ -2,7 +2,7 @@ export const SENSITIVE_TOPIC_CATEGORIES = [
   {
     key: "finance_and_debt",
     label: "财务与负债",
-    description: "收入稳定性、负债情况、消费习惯，以及金钱压力相关议题。"
+    description: "收入稳定性、负债情况、消费习惯，以及和金钱压力相关的话题。"
   },
   {
     key: "family_boundaries",
@@ -27,12 +27,12 @@ export const SENSITIVE_TOPIC_CATEGORIES = [
   {
     key: "relationship_history",
     label: "感情经历",
-    description: "过往重要关系、离异经历、重复出现的关系模式。"
+    description: "过去重要关系、离异经历、重复出现的关系模式。"
   },
   {
     key: "lifestyle_and_risk_habits",
     label: "生活方式与风险习惯",
-    description: "抽烟、饮酒、赌博、极端负债或高风险生活习惯。"
+    description: "抽烟、喝酒、赌博、极端负债或高风险生活习惯。"
   }
 ];
 
@@ -116,7 +116,7 @@ export const CANDIDATE_RISK_DEFS = {
     label: "消费观偏激进",
     severity: "medium",
     severityLabel: "中风险",
-    whyItMatters: "如果用户偏好务实稳定，这类差异可能会在长期关系中被放大。"
+    whyItMatters: "如果用户偏好务实稳定，这类差异可能会在长期关系里被放大。"
   },
   exploratory_goal: {
     label: "关系目标偏轻",
@@ -214,7 +214,7 @@ export const REALITY_FIELD_DEFS = [
     label: "车辆状态",
     optional: true,
     supportsMultiValue: true,
-    suggestionReason: "有助于系统判断通勤方式和部分现实生活便利度。",
+    suggestionReason: "有助于系统判断通勤方式和部分现实生活便利程度。",
     options: [
       { value: "none", label: "无车" },
       { value: "own", label: "有车" },

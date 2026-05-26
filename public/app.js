@@ -1,3 +1,5 @@
+import { escapeHtml, fetchJson, formatDateTime, logout, requireAuth } from "./common.js";
+
 const MODE_OPTIONS = [
   { value: "ignore", label: "不纳入匹配" },
   { value: "prefer", label: "加分偏好" },
@@ -6,150 +8,86 @@ const MODE_OPTIONS = [
 ];
 
 const samplePayload = {
-  twinProfile: {
-    displayName: "雨涵",
-    relationshipGoal: "认真长期关系，希望以结婚为目标",
-    cities: "上海、杭州",
-    mustHaves: "情绪稳定、愿意认真经营关系、能直接沟通",
-    hardStops: "早期借钱、赌博、高消费",
-    communicationStyle: "直接、稳定回复、不喜欢反复试探",
-    marriageTimeline: "如果匹配，希望 1 到 2 年内推进",
-    childrenPreference: "希望未来要孩子，但不想立刻推进生育",
-    familyBoundary: "尊重父母，但婚后更偏独立小家庭",
-    financialView: "务实稳定，不接受隐性负债",
-    selfSummary: "更重视长期稳定和现实可推进性，不想在目标模糊的人身上花太多时间。",
-    authorizedSensitiveTopics: [
-      "finance_and_debt",
-      "family_boundaries",
-      "marriage_and_housing_logistics",
-      "fertility_and_children"
-    ],
-    selfReality: {
-      incomeBand: "30k_to_50k",
-      incomeStability: "stable",
-      debtLevel: "mortgage_or_car_loan_only",
-      housingStatus: "renting_independently",
-      vehicleStatus: "none",
-      siblingStructure: "only_child",
-      parentCareBurden: "medium",
-      postMaritalLivingPreference: "independent_home"
-    },
-    partnerRealityPreferences: {
-      incomeBand: { mode: "prefer", values: ["30k_to_50k", "50k_plus"] },
-      housingStatus: { mode: "prefer", values: ["own_with_loan", "own_without_loan"] },
-      parentCareBurden: { mode: "require", values: ["low", "medium"] },
-      postMaritalLivingPreference: {
-        mode: "require",
-        values: ["independent_home", "near_parents"]
-      }
+  displayName: "雨涵",
+  relationshipGoal: "认真长期关系，希望以结婚为目标",
+  cities: "上海、杭州",
+  mustHaves: "情绪稳定、愿意认真经营关系、能直接沟通",
+  hardStops: "借钱、赌博、高消费失控",
+  communicationStyle: "直接、稳定回复，不喜欢反复试探",
+  marriageTimeline: "如果匹配，希望 1 到 2 年内推进",
+  childrenPreference: "希望未来要孩子，但不想立刻推进生育",
+  familyBoundary: "尊重父母，但婚后更偏独立小家庭",
+  financialView: "务实稳定，不接受隐性负债",
+  selfSummary: "更重视长期稳定和现实可推进性，不想在目标模糊的人身上花太多时间。",
+  authorizedSensitiveTopics: [
+    "finance_and_debt",
+    "family_boundaries",
+    "marriage_and_housing_logistics",
+    "fertility_and_children"
+  ],
+  selfReality: {
+    incomeBand: "30k_to_50k",
+    incomeStability: "stable",
+    debtLevel: "mortgage_or_car_loan_only",
+    housingStatus: "renting_independently",
+    vehicleStatus: "none",
+    siblingStructure: "only_child",
+    parentCareBurden: "medium",
+    postMaritalLivingPreference: "independent_home"
+  },
+  partnerRealityPreferences: {
+    incomeBand: { mode: "prefer", values: ["30k_to_50k", "50k_plus"] },
+    housingStatus: { mode: "prefer", values: ["own_with_loan", "own_without_loan"] },
+    parentCareBurden: { mode: "require", values: ["low", "medium"] },
+    postMaritalLivingPreference: {
+      mode: "require",
+      values: ["independent_home", "near_parents"]
     }
   }
 };
 
 const form = document.querySelector("#matching-form");
-const reportShell = document.querySelector("#report-shell");
 const historyList = document.querySelector("#history-list");
-const profileList = document.querySelector("#profile-list");
+const currentTwinShell = document.querySelector("#current-twin-shell");
 const statusText = document.querySelector("#status-text");
 const profileStateText = document.querySelector("#profile-state-text");
 const sampleButton = document.querySelector("#sample-button");
-const saveProfileButton = document.querySelector("#save-profile-button");
-const newProfileButton = document.querySelector("#new-profile-button");
+const saveTwinButton = document.querySelector("#save-twin-button");
+const resetFormButton = document.querySelector("#reset-form-button");
+const logoutButton = document.querySelector("#logout-button");
 const topicContainer = document.querySelector("#topic-checkboxes");
 const selfRealityContainer = document.querySelector("#reality-self-fields");
 const preferenceContainer = document.querySelector("#reality-preference-fields");
 
+const AUTO_SAVE_DELAY_MS = 1200;
+
 let appConfig = {
   realityFieldDefs: [],
-  sensitiveTopicCategories: [],
-  candidatePoolSize: 0
+  sensitiveTopicCategories: []
 };
-let reportCache = [];
-let profileCache = [];
-let currentProfileId = "";
+let currentTwin = null;
+let autoSaveTimer = null;
+let lastPersistedSnapshot = "";
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-async function fetchJson(url, options) {
-  const response = await fetch(url, options);
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload.error || "请求失败。");
+function asDisplayText(value, fallback = "未填写") {
+  if (Array.isArray(value)) {
+    return value.length ? value.join("、") : fallback;
   }
 
-  return payload;
+  const text = String(value ?? "").trim();
+  return text || fallback;
 }
 
-function renderPill(tone, label) {
-  return `<span class="pill ${escapeHtml(tone)}">${escapeHtml(label)}</span>`;
+function setStatus(state, message) {
+  statusText.dataset.state = state;
+  statusText.textContent = message;
 }
 
-function updateProfileState() {
-  const currentProfile = profileCache.find((profile) => profile.id === currentProfileId);
-
-  if (!currentProfile) {
-    profileStateText.textContent = "当前为未保存档案。";
-    return;
-  }
-
-  const cities = currentProfile.cities || "未填写城市";
-  profileStateText.textContent = `当前档案：${currentProfile.displayName} · ${cities}`;
-}
-
-function buildTwinProfilePayload() {
-  const data = new FormData(form);
-  const checkedTopics = [...form.querySelectorAll('input[name="topic"]:checked')].map(
-    (input) => input.value
+function setSavedStatus(auto = false) {
+  setStatus(
+    "saved",
+    `${auto ? "已自动保存" : "已保存"}于 ${new Date().toLocaleTimeString()}`
   );
-  const selfReality = {};
-  const partnerRealityPreferences = {};
-
-  for (const field of appConfig.realityFieldDefs) {
-    selfReality[field.key] = data.get(`selfReality_${field.key}`) || "";
-    partnerRealityPreferences[field.key] = {
-      mode: data.get(`preferenceMode_${field.key}`) || "ignore",
-      values: [
-        ...form.querySelectorAll(`input[name="preferenceValue_${field.key}"]:checked`)
-      ].map((input) => input.value)
-    };
-  }
-
-  return {
-    displayName: data.get("twinDisplayName"),
-    relationshipGoal: data.get("twinRelationshipGoal"),
-    cities: data.get("twinCities"),
-    mustHaves: data.get("twinMustHaves"),
-    hardStops: data.get("twinHardStops"),
-    communicationStyle: data.get("twinCommunicationStyle"),
-    marriageTimeline: data.get("twinMarriageTimeline"),
-    childrenPreference: data.get("twinChildrenPreference"),
-    familyBoundary: data.get("twinFamilyBoundary"),
-    financialView: data.get("twinFinancialView"),
-    selfSummary: data.get("twinSelfSummary"),
-    authorizedSensitiveTopics: checkedTopics,
-    selfReality,
-    partnerRealityPreferences
-  };
-}
-
-function renderOptionChips(field, prefix) {
-  return field.options
-    .map(
-      (option) => `
-        <label class="option-chip">
-          <input type="checkbox" name="${escapeHtml(prefix)}" value="${escapeHtml(option.value)}" />
-          <span>${escapeHtml(option.label)}</span>
-        </label>
-      `
-    )
-    .join("");
 }
 
 function renderTopicCheckboxes(topics) {
@@ -189,6 +127,19 @@ function renderRealitySelfFields(fields) {
     .join("");
 }
 
+function renderOptionChips(field, prefix) {
+  return field.options
+    .map(
+      (option) => `
+        <label class="option-chip">
+          <input type="checkbox" name="${escapeHtml(prefix)}" value="${escapeHtml(option.value)}" />
+          <span>${escapeHtml(option.label)}</span>
+        </label>
+      `
+    )
+    .join("");
+}
+
 function renderRealityPreferenceFields(fields) {
   preferenceContainer.innerHTML = fields
     .map(
@@ -197,12 +148,11 @@ function renderRealityPreferenceFields(fields) {
           <div class="preference-head">
             <div>
               <strong>${escapeHtml(field.label)}</strong>
-              <p>可按偏好、必须项或排除项设置。</p>
+              <p>按偏好、必须项或排斥项设置。</p>
             </div>
             <select name="preferenceMode_${escapeHtml(field.key)}" data-preference-mode="${escapeHtml(field.key)}">
               ${MODE_OPTIONS.map(
-                (mode) =>
-                  `<option value="${escapeHtml(mode.value)}">${escapeHtml(mode.label)}</option>`
+                (mode) => `<option value="${escapeHtml(mode.value)}">${escapeHtml(mode.label)}</option>`
               ).join("")}
             </select>
           </div>
@@ -218,24 +168,66 @@ function renderRealityPreferenceFields(fields) {
 function syncPreferenceValuesAvailability() {
   for (const field of appConfig.realityFieldDefs) {
     const modeSelect = form.elements[`preferenceMode_${field.key}`];
-    const group = preferenceContainer.querySelector(`[data-preference-values="${field.key}"]`);
+    const inputs = preferenceContainer.querySelectorAll(`input[name="preferenceValue_${field.key}"]`);
     const disabled = !modeSelect || modeSelect.value === "ignore";
 
-    if (!group) continue;
-
-    group.classList.toggle("disabled", disabled);
-    for (const input of group.querySelectorAll("input")) {
+    inputs.forEach((input) => {
       input.disabled = disabled;
       if (disabled) {
         input.checked = false;
       }
-    }
+    });
   }
 }
 
-function fillFormFromProfile(twinProfile) {
-  form.reset();
+function buildTwinProfilePayload() {
+  const data = new FormData(form);
+  const selfReality = {};
+  const partnerRealityPreferences = {};
 
+  for (const field of appConfig.realityFieldDefs) {
+    selfReality[field.key] = data.get(`selfReality_${field.key}`) || "";
+    partnerRealityPreferences[field.key] = {
+      mode: data.get(`preferenceMode_${field.key}`) || "ignore",
+      values: [...form.querySelectorAll(`input[name="preferenceValue_${field.key}"]:checked`)].map(
+        (input) => input.value
+      )
+    };
+  }
+
+  return {
+    displayName: data.get("twinDisplayName") || "",
+    relationshipGoal: data.get("twinRelationshipGoal") || "",
+    cities: data.get("twinCities") || "",
+    mustHaves: data.get("twinMustHaves") || "",
+    hardStops: data.get("twinHardStops") || "",
+    communicationStyle: data.get("twinCommunicationStyle") || "",
+    marriageTimeline: data.get("twinMarriageTimeline") || "",
+    childrenPreference: data.get("twinChildrenPreference") || "",
+    familyBoundary: data.get("twinFamilyBoundary") || "",
+    financialView: data.get("twinFinancialView") || "",
+    selfSummary: data.get("twinSelfSummary") || "",
+    authorizedSensitiveTopics: [...form.querySelectorAll('input[name="topic"]:checked')].map(
+      (input) => input.value
+    ),
+    selfReality,
+    partnerRealityPreferences
+  };
+}
+
+function currentFormSnapshot() {
+  return JSON.stringify(buildTwinProfilePayload());
+}
+
+function syncPersistedSnapshot() {
+  lastPersistedSnapshot = currentFormSnapshot();
+}
+
+function hasUnsavedTwinChanges() {
+  return currentFormSnapshot() !== lastPersistedSnapshot;
+}
+
+function fillFormFromTwin(twinProfile = {}) {
   form.elements.twinDisplayName.value = twinProfile.displayName || "";
   form.elements.twinRelationshipGoal.value = twinProfile.relationshipGoal || "";
   form.elements.twinCities.value = twinProfile.cities || "";
@@ -248,257 +240,84 @@ function fillFormFromProfile(twinProfile) {
   form.elements.twinFinancialView.value = twinProfile.financialView || "";
   form.elements.twinSelfSummary.value = twinProfile.selfSummary || "";
 
-  for (const input of form.querySelectorAll('input[name="topic"]')) {
-    input.checked = (twinProfile.authorizedSensitiveTopics || []).includes(input.value);
+  for (const topicInput of form.querySelectorAll('input[name="topic"]')) {
+    topicInput.checked = (twinProfile.authorizedSensitiveTopics || []).includes(topicInput.value);
   }
 
   for (const field of appConfig.realityFieldDefs) {
-    const selfField = form.elements[`selfReality_${field.key}`];
-    const preferenceMode = form.elements[`preferenceMode_${field.key}`];
-    const preferenceConfig = twinProfile.partnerRealityPreferences?.[field.key] || {
-      mode: "ignore",
-      values: []
-    };
-
-    if (selfField) {
-      selfField.value = twinProfile.selfReality?.[field.key] || "";
-    }
-
-    if (preferenceMode) {
-      preferenceMode.value = preferenceConfig.mode || "ignore";
-    }
+    form.elements[`selfReality_${field.key}`].value = twinProfile.selfReality?.[field.key] || "";
+    form.elements[`preferenceMode_${field.key}`].value =
+      twinProfile.partnerRealityPreferences?.[field.key]?.mode || "ignore";
 
     for (const input of form.querySelectorAll(`input[name="preferenceValue_${field.key}"]`)) {
-      input.checked = (preferenceConfig.values || []).includes(input.value);
+      input.checked = (twinProfile.partnerRealityPreferences?.[field.key]?.values || []).includes(
+        input.value
+      );
     }
   }
 
   syncPreferenceValuesAvailability();
 }
 
-function clearCurrentProfile() {
-  currentProfileId = "";
+function clearForm() {
   form.reset();
   syncPreferenceValuesAvailability();
-  updateProfileState();
+  currentTwin = null;
+  currentTwinShell.innerHTML = "";
+  profileStateText.textContent = "当前 Twin 还没有保存。";
+  syncPersistedSnapshot();
+setStatus("idle", "已清空表单。");
 }
 
-function renderSimpleList(items, fallback) {
-  if (!items.length) {
-    return `<p class="summary compact">${escapeHtml(fallback)}</p>`;
-  }
-
-  return `<ul class="plain-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
-}
-
-function renderTwinSummary(report) {
-  return `
-    <section class="report-section">
-      <h3>Twin 画像摘要</h3>
-      <div class="report-topline">
-        <span class="badge promising">${escapeHtml(report.twinSummary.profileLabel)}</span>
-      </div>
-      <p class="summary">${escapeHtml(report.twinSummary.summary)}</p>
-      ${renderSimpleList(report.twinSummary.anchors, "当前还没有足够画像锚点。")}
-    </section>
-  `;
-}
-
-function renderRealitySummary(report) {
-  const selfItems = report.realitySummary.selfReality.map(
-    (item) => `${item.label}：${item.valueLabel}`
-  );
-  const preferenceItems = report.realitySummary.partnerPreferences.map(
-    (item) => `${item.label}：${item.modeLabel}（${item.valueLabels.join("、")}）`
-  );
-
-  return `
-    <section class="report-section">
-      <h3>现实条件摘要</h3>
-      <div class="subsection">
-        <strong>我的现实情况</strong>
-        ${renderSimpleList(selfItems, "这次还没有填写结构化现实条件。")}
-      </div>
-      <div class="subsection">
-        <strong>我对对方的现实条件偏好</strong>
-        ${renderSimpleList(preferenceItems, "这次还没有设置结构化现实条件偏好。")}
-      </div>
-    </section>
-  `;
-}
-
-function renderShortlist(report) {
-  return `
-    <section class="report-section">
-      <h3>数据库匹配 shortlist</h3>
-      <div class="stack-list">
-        ${report.shortlist
-          .map((candidate) => {
-            const realityLine = candidate.realitySummary
-              .map((item) => `${item.label}：${item.valueLabel}`)
-              .join(" / ");
-            const findingLine = candidate.realityFindings.map((item) => item.summary).join(" ");
-
-            return `
-              <article class="stack-item">
-                <header>
-                  <strong>${escapeHtml(candidate.displayName)} · ${escapeHtml(String(candidate.age))} 岁 · ${escapeHtml(candidate.city)}</strong>
-                  ${renderPill(candidate.matchBandKey, candidate.matchBandLabel)}
-                </header>
-                <p><strong>职业：</strong>${escapeHtml(candidate.occupation)} · <strong>认证：</strong>${escapeHtml(candidate.verificationLevel)}</p>
-                <p><strong>匹配分：</strong>${escapeHtml(String(candidate.matchScore))}/100</p>
-                <p><strong>候选摘要：</strong>${escapeHtml(candidate.summary)}</p>
-                <p><strong>亮点：</strong>${escapeHtml(candidate.highlights.join("、"))}</p>
-                <p><strong>现实条件：</strong>${escapeHtml(realityLine)}</p>
-                <p><strong>推荐理由：</strong>${escapeHtml(candidate.matchedReasons.join(" "))}</p>
-                <p><strong>结构化现实判断：</strong>${escapeHtml(findingLine || "当前没有触发额外的结构化现实提醒。")}</p>
-                <p><strong>需要留意：</strong>${escapeHtml(candidate.cautionPoints.length ? candidate.cautionPoints.join(" ") : "当前没有明显结构性风险。")}</p>
-                <p><strong>进入下一阶段前重点确认：</strong>${escapeHtml(candidate.nextPhaseFocus.join(" "))}</p>
-              </article>
-            `;
-          })
-          .join("")}
-      </div>
-    </section>
-  `;
-}
-
-function renderProfileGaps(report) {
-  return `
-    <section class="report-section">
-      <h3>用户画像缺口</h3>
-      <div class="stack-list">
-        ${
-          report.profileGaps.length
-            ? report.profileGaps
-                .map(
-                  (gap) => `
-                    <article class="stack-item">
-                      <header>
-                        <strong>${escapeHtml(gap.dimension)}</strong>
-                        ${renderPill(gap.priority, gap.priorityLabel)}
-                      </header>
-                      <p>${escapeHtml(gap.reason)}</p>
-                    </article>
-                  `
-                )
-                .join("")
-            : `<article class="stack-item"><p>当前画像已经具备基础匹配条件，没有明显高优先级缺口。</p></article>`
-        }
-      </div>
-    </section>
-  `;
-}
-
-function renderSuggestedCompletions(report) {
-  return `
-    <section class="report-section">
-      <h3>建议补充的信息</h3>
-      <div class="stack-list">
-        ${
-          report.suggestedCompletions.length
-            ? report.suggestedCompletions
-                .map(
-                  (item) => `
-                    <article class="stack-item">
-                      <header>
-                        <strong>${escapeHtml(item.label)}</strong>
-                        ${renderPill("low", "选填建议")}
-                      </header>
-                      <p>${escapeHtml(item.reason)}</p>
-                    </article>
-                  `
-                )
-                .join("")
-            : `<article class="stack-item"><p>这次已经补充了完整的结构化现实条件层。</p></article>`
-        }
-      </div>
-    </section>
-  `;
-}
-
-function renderReport(report) {
-  const topCandidate = report.shortlist[0];
-
-  reportShell.classList.remove("empty");
-  reportShell.innerHTML = `
-    <div class="report-topline">
-      <p class="eyebrow">生成时间：${escapeHtml(new Date(report.createdAt).toLocaleString())}</p>
-      <span class="badge promising">${escapeHtml(report.phaseLabel)}</span>
-    </div>
-    <div class="score">${escapeHtml(String(report.overview.shortlistCount))} 人</div>
-    <p class="summary">${escapeHtml(report.overview.headline)}</p>
-    <p class="summary">
-      现实条件排除：${escapeHtml(String(report.overview.excludedByRealityCount))} 人
-      · 下一阶段就绪：${escapeHtml(String(report.overview.nextPhaseReadyCount))} 人
-    </p>
-    ${
-      topCandidate
-        ? `<p class="summary">当前 Top 1 推荐为 ${escapeHtml(topCandidate.displayName)}，匹配分 ${escapeHtml(String(topCandidate.matchScore))}。</p>`
-        : ""
-    }
-
-    <div class="report-grid">
-      ${renderTwinSummary(report)}
-      ${renderRealitySummary(report)}
-      ${renderShortlist(report)}
-      ${renderProfileGaps(report)}
-      ${renderSuggestedCompletions(report)}
-      <section class="report-section">
-        <h3>下一步建议</h3>
-        <ul class="plain-list">
-          ${report.nextSteps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
-        </ul>
-      </section>
-    </div>
-  `;
-}
-
-function renderProfiles() {
-  if (!profileCache.length) {
-    profileList.innerHTML = `<div class="history-item"><p>还没有保存的 Twin 档案。</p></div>`;
+function renderCurrentTwin() {
+  if (!currentTwin) {
+    currentTwinShell.innerHTML = `
+      <article class="history-item">
+        <p>还没有当前 Twin。先填写资料并保存。</p>
+      </article>
+    `;
     return;
   }
 
-  profileList.innerHTML = profileCache
+  currentTwinShell.innerHTML = `
+    <article class="history-item">
+      <header>
+        <strong>${escapeHtml(currentTwin.displayName)}</strong>
+        <span class="pill ok">v${escapeHtml(String(currentTwin.twinVersionNumber))}</span>
+      </header>
+      <p><strong>关系目标：</strong>${escapeHtml(asDisplayText(currentTwin.twinProfile.relationshipGoal))}</p>
+      <p><strong>偏好城市：</strong>${escapeHtml(asDisplayText(currentTwin.twinProfile.cities))}</p>
+      <p><strong>沟通风格：</strong>${escapeHtml(asDisplayText(currentTwin.twinProfile.communicationStyle))}</p>
+      <p><strong>最近更新：</strong>${escapeHtml(formatDateTime(currentTwin.updatedAt))}</p>
+    </article>
+  `;
+}
+
+function renderHistory(reports) {
+  if (!reports.length) {
+    historyList.innerHTML = `
+      <article class="history-item">
+        <p>还没有匹配报告。保存 Twin 后即可生成。</p>
+      </article>
+    `;
+    return;
+  }
+
+  historyList.innerHTML = reports
     .map(
-      (profile) => `
-        <article class="history-item ${profile.id === currentProfileId ? "is-current" : ""}">
-          <strong>${escapeHtml(profile.displayName)}</strong>
-          <p>${escapeHtml(profile.relationshipGoal || "未填写关系目标")}</p>
-          <p>${escapeHtml(profile.cities || "未填写城市偏好")}</p>
-          <p>更新于：${escapeHtml(new Date(profile.updatedAt).toLocaleString())}</p>
-          <div class="history-actions">
-            <button type="button" data-profile-action="load" data-profile-id="${escapeHtml(profile.id)}">载入</button>
-            <button type="button" data-profile-action="rematch" data-profile-id="${escapeHtml(profile.id)}">重新匹配</button>
+      (report) => `
+        <article class="history-item">
+          <header>
+            <strong>${escapeHtml(report.overview.headline || report.id)}</strong>
+            <span class="pill low">${escapeHtml(formatDateTime(report.createdAt))}</span>
+          </header>
+          <p>${escapeHtml(report.twinSummary?.summary || "暂无摘要。")}</p>
+          <div class="page-actions">
+            <button type="button" data-report-id="${escapeHtml(report.id)}">打开结果页</button>
           </div>
         </article>
       `
     )
-    .join("");
-}
-
-function renderHistory() {
-  if (!reportCache.length) {
-    historyList.innerHTML = `<div class="history-item"><p>还没有保存的匹配报告。</p></div>`;
-    return;
-  }
-
-  historyList.innerHTML = reportCache
-    .map((report) => {
-      const topCandidate = report.shortlist[0];
-
-      return `
-        <article class="history-item">
-          <strong>${escapeHtml(report.twinSummary.displayName)}</strong>
-          <p>${escapeHtml(report.twinSummary.profileLabel)}</p>
-          <p>${escapeHtml(report.overview.headline)}</p>
-          <p>Top 1：${escapeHtml(topCandidate ? topCandidate.displayName : "暂无")} ${topCandidate ? `· ${escapeHtml(topCandidate.matchBandLabel)}` : ""}</p>
-          <p>${escapeHtml(new Date(report.createdAt).toLocaleString())}</p>
-          <button type="button" data-report-id="${escapeHtml(report.id)}">打开报告</button>
-        </article>
-      `;
-    })
     .join("");
 }
 
@@ -509,77 +328,93 @@ async function loadConfig() {
   renderRealitySelfFields(config.realityFieldDefs);
   renderRealityPreferenceFields(config.realityFieldDefs);
   syncPreferenceValuesAvailability();
-  statusText.textContent = `候选池已加载，共 ${config.candidatePoolSize} 人。`;
 }
 
-async function loadProfiles() {
-  const { profiles } = await fetchJson("/api/profiles");
-  profileCache = profiles;
-  renderProfiles();
-  updateProfileState();
+async function loadCurrentTwin() {
+  const { twin } = await fetchJson("/api/twin");
+  currentTwin = twin;
+
+  if (twin) {
+    fillFormFromTwin(twin.twinProfile);
+    profileStateText.textContent = `当前 Twin 版本：v${twin.twinVersionNumber}`;
+  } else {
+    profileStateText.textContent = "当前 Twin 还没有保存。";
+  }
+
+  syncPersistedSnapshot();
+  renderCurrentTwin();
 }
 
 async function loadHistory() {
   const { reports } = await fetchJson("/api/reports");
-  reportCache = reports;
-  renderHistory();
+  renderHistory(reports);
 }
 
-async function persistCurrentProfile() {
-  const { profile } = await fetchJson("/api/profiles", {
+async function persistCurrentTwin(auto = false) {
+  if (auto && !hasUnsavedTwinChanges()) {
+    return;
+  }
+
+  const twinProfile = buildTwinProfilePayload();
+  setStatus(auto ? "saving" : "saving", auto ? "正在自动保存 Twin..." : "正在保存当前 Twin...");
+  const { twin } = await fetchJson("/api/twin", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      profileId: currentProfileId,
-      twinProfile: buildTwinProfilePayload()
-    })
+    body: JSON.stringify({ twinProfile })
   });
 
-  currentProfileId = profile.id;
-  await loadProfiles();
-  updateProfileState();
-  return profile;
+  currentTwin = twin;
+  renderCurrentTwin();
+  profileStateText.textContent = `当前 Twin 版本：v${twin.twinVersionNumber}`;
+  syncPersistedSnapshot();
+  setSavedStatus(auto);
 }
 
-async function openProfile(profileId) {
-  const { profile } = await fetchJson(`/api/profiles/${encodeURIComponent(profileId)}`);
-  currentProfileId = profile.id;
-  fillFormFromProfile(profile.twinProfile);
-  updateProfileState();
-  return profile;
-}
-
-async function runMatching(payload) {
-  const { report, profile } = await fetchJson("/api/reports", {
+async function generateReport() {
+  const twinProfile = buildTwinProfilePayload();
+  setStatus("saving", "正在生成匹配报告...");
+  const { report, twin } = await fetchJson("/api/reports", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body: JSON.stringify({ twinProfile })
   });
 
-  currentProfileId = profile.id;
-  await loadProfiles();
-  await loadHistory();
-  updateProfileState();
-  renderReport(report);
-  return report;
+  currentTwin = twin;
+  renderCurrentTwin();
+  profileStateText.textContent = `当前 Twin 版本：v${twin.twinVersionNumber}`;
+  syncPersistedSnapshot();
+  setSavedStatus(false);
+  window.location.href = `/report.html?reportId=${encodeURIComponent(report.id)}`;
+}
+
+function scheduleAutoSave() {
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer);
+  }
+
+  setStatus("pending", "检测到修改，将在 1.2 秒后自动保存...");
+  autoSaveTimer = window.setTimeout(async () => {
+    try {
+      await persistCurrentTwin(true);
+    } catch (error) {
+      setStatus("error", `自动保存失败：${error.message}`);
+    }
+  }, AUTO_SAVE_DELAY_MS);
 }
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  statusText.textContent = "正在保存档案并生成匹配报告...";
 
   try {
-    await runMatching({
-      profileId: currentProfileId,
-      twinProfile: buildTwinProfilePayload()
-    });
-    statusText.textContent = "匹配报告已生成，并已保存到数据库。";
+    await generateReport();
   } catch (error) {
-    statusText.textContent = error.message;
+    setStatus("error", `生成报告失败：${error.message}`);
   }
 });
 
-form.addEventListener("change", (event) => {
+form.addEventListener("input", () => scheduleAutoSave());
+
+preferenceContainer.addEventListener("change", (event) => {
   if (event.target.matches("[data-preference-mode]")) {
     syncPreferenceValuesAvailability();
   }
@@ -587,64 +422,29 @@ form.addEventListener("change", (event) => {
 
 historyList.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-report-id]");
-  if (!button) return;
 
-  const report = reportCache.find((item) => item.id === button.dataset.reportId);
-  if (report) {
-    renderReport(report);
+  if (button) {
+    window.location.href = `/report.html?reportId=${encodeURIComponent(button.dataset.reportId)}`;
   }
-});
-
-profileList.addEventListener("click", async (event) => {
-  const button = event.target.closest("button[data-profile-id]");
-  if (!button) return;
-
-  const profileId = button.dataset.profileId;
-  const action = button.dataset.profileAction;
-
-  try {
-    if (action === "load") {
-      await openProfile(profileId);
-      statusText.textContent = "Twin 档案已载入。";
-      renderProfiles();
-      return;
-    }
-
-    if (action === "rematch") {
-      statusText.textContent = "正在基于已保存档案重新匹配...";
-      await runMatching({ profileId });
-      statusText.textContent = "已基于已保存档案重新生成匹配报告。";
-    }
-  } catch (error) {
-    statusText.textContent = error.message;
-  }
-});
-
-saveProfileButton.addEventListener("click", async () => {
-  statusText.textContent = "正在保存 Twin 档案...";
-
-  try {
-    await persistCurrentProfile();
-    statusText.textContent = "Twin 档案已保存。";
-  } catch (error) {
-    statusText.textContent = error.message;
-  }
-});
-
-newProfileButton.addEventListener("click", () => {
-  clearCurrentProfile();
-  statusText.textContent = "已切换到新的空白档案。";
-  renderProfiles();
 });
 
 sampleButton.addEventListener("click", () => {
-  currentProfileId = "";
-  fillFormFromProfile(samplePayload.twinProfile);
-  updateProfileState();
-  renderProfiles();
-  statusText.textContent = "示例数据已载入。";
+  fillFormFromTwin(samplePayload);
+  scheduleAutoSave();
 });
 
+saveTwinButton.addEventListener("click", async () => {
+  try {
+    await persistCurrentTwin(false);
+  } catch (error) {
+    setStatus("error", `保存失败：${error.message}`);
+  }
+});
+
+resetFormButton.addEventListener("click", () => clearForm());
+logoutButton.addEventListener("click", () => logout());
+
+await requireAuth();
 await loadConfig();
-await loadProfiles();
+await loadCurrentTwin();
 await loadHistory();

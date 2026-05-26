@@ -3,29 +3,30 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>同频 Phase 1 工作台</title>
+    <title>同频 · 我的 Twin</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="page-shell">
       <header class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">同频 · Phase 1</p>
-          <h1>单侧建档、持久化档案与数据库匹配</h1>
+          <p class="eyebrow">同频 · Phase 2</p>
+          <h1>我的 Twin 与双边预沟通</h1>
           <p class="hero-text">
-            当前版本已经从一次性表单升级为可保存的 Twin 档案工作台。你可以保存自己的档案、反复读取、重新匹配，并基于数据库候选池持续迭代画像。
+            先维护当前 Twin，再进入双真实用户匹配、Twin-Twin 预沟通、敏感问题授权和真人接手。
           </p>
         </div>
         <div class="hero-panel">
           <div class="metric">
-            <span class="metric-label">当前范围</span>
-            <strong>保存 Twin 档案 → 从候选库匹配 → 输出 shortlist → 反复重跑</strong>
+            <span class="metric-label">当前登录</span>
+            <strong data-current-user>正在加载...</strong>
           </div>
-          <div class="metric">
-            <span class="metric-label">下一阶段入口</span>
-            <strong>从 shortlist 进入 Twin 预沟通、敏感信息核实与真人交接</strong>
-          </div>
-          <button id="sample-button" class="secondary-button" type="button">载入示例</button>
+          <nav class="nav-links">
+            <a class="secondary-button link-button" href="/">我的 Twin</a>
+            <a class="secondary-button link-button" href="/matches.html">双边匹配</a>
+            <a class="secondary-button link-button" href="/inbox.html">待办箱</a>
+            <button id="logout-button" class="secondary-button" type="button">退出登录</button>
+          </nav>
         </div>
       </header>
 
@@ -33,9 +34,9 @@
         <section class="forms-column">
           <form id="matching-form" class="panel form-panel">
             <div class="panel-head">
-              <h2>用户建档</h2>
-              <p>当前匹配来自数据库候选池。你可以先保存档案，再随时重新匹配。</p>
-              <p id="profile-state-text" class="status-text">当前为未保存档案。</p>
+              <h2>当前 Twin</h2>
+              <p>每个用户只有 1 个当前生效 Twin。保存时会自动生成内部版本快照。</p>
+              <p id="profile-state-text" class="status-text">当前 Twin 还没有保存。</p>
             </div>
 
             <div class="field-grid">
@@ -53,7 +54,7 @@
               </label>
               <label>
                 <span>沟通风格偏好</span>
-                <input name="twinCommunicationStyle" placeholder="直接、稳定回复、不喜欢反复试探" />
+                <input name="twinCommunicationStyle" placeholder="直接、稳定回复" />
               </label>
               <label>
                 <span>结婚时间预期</span>
@@ -61,34 +62,26 @@
               </label>
               <label>
                 <span>孩子与生育态度</span>
-                <input name="twinChildrenPreference" placeholder="希望未来要孩子，但不想立刻推进生育" />
+                <input name="twinChildrenPreference" placeholder="希望未来要孩子" />
               </label>
               <label>
                 <span>家庭边界</span>
-                <input name="twinFamilyBoundary" placeholder="尊重父母，但婚后更偏独立小家庭" />
+                <input name="twinFamilyBoundary" placeholder="尊重父母，但婚后偏独立小家庭" />
               </label>
               <label>
                 <span>财务观</span>
-                <input name="twinFinancialView" placeholder="务实稳定，不接受隐性负债和冲动高消费" />
+                <input name="twinFinancialView" placeholder="务实稳定，不接受隐性负债" />
               </label>
             </div>
 
             <label>
               <span>必须满足项</span>
-              <textarea
-                name="twinMustHaves"
-                rows="3"
-                placeholder="情绪稳定、明确想认真发展、能直接沟通"
-              ></textarea>
+              <textarea name="twinMustHaves" rows="3" placeholder="情绪稳定、愿意认真经营关系"></textarea>
             </label>
 
             <label>
               <span>硬性雷区</span>
-              <textarea
-                name="twinHardStops"
-                rows="3"
-                placeholder="早期借钱、赌博、结婚态度长期模糊"
-              ></textarea>
+              <textarea name="twinHardStops" rows="3" placeholder="借钱、赌博、长期目标模糊"></textarea>
             </label>
 
             <label>
@@ -96,7 +89,7 @@
               <textarea
                 name="twinSelfSummary"
                 rows="4"
-                placeholder="除了表单字段之外，希望 Twin 记住的判断逻辑、关系偏好和风险敏感点"
+                placeholder="希望 Twin 记住的判断逻辑、关系偏好和风险敏感点"
               ></textarea>
             </label>
 
@@ -104,7 +97,7 @@
               <div class="section-head">
                 <div>
                   <h3>我的现实情况</h3>
-                  <p>选填。进入 Twin 画像，但默认不会自动变成硬门槛。</p>
+                  <p>选填。进入 Twin 画像，但默认不自动变成硬门槛。</p>
                 </div>
                 <span class="soft-tag">选填</span>
               </div>
@@ -115,7 +108,7 @@
               <div class="section-head">
                 <div>
                   <h3>我对对方的现实条件偏好</h3>
-                  <p>选填。默认按软匹配处理，只有你显式设成“必须满足”或“不接受”时才升级为强约束。</p>
+                  <p>选填。默认按软匹配处理，只有设置为必须或不接受时才是强约束。</p>
                 </div>
                 <span class="soft-tag">选填</span>
               </div>
@@ -125,43 +118,34 @@
             <div class="consent-block">
               <div>
                 <h3>敏感议题授权</h3>
-                <p>当前阶段不会直接发起聊天，但会决定 shortlist 通过后 Twin 可以核实哪些敏感议题。</p>
+                <p>这些类别决定 Phase 2 里系统能否向你发起逐题敏感授权请求。</p>
               </div>
               <div id="topic-checkboxes" class="checkbox-grid"></div>
             </div>
 
             <div class="actions">
-              <button class="primary-button" type="submit">生成匹配报告</button>
-              <button id="save-profile-button" class="secondary-button" type="button">保存 Twin 档案</button>
-              <button id="new-profile-button" class="secondary-button" type="button">新建档案</button>
+              <button class="primary-button" type="submit">生成 Phase 1 匹配报告</button>
+              <button id="save-twin-button" class="secondary-button" type="button">保存当前 Twin</button>
+              <button id="sample-button" class="secondary-button" type="button">载入示例</button>
+              <button id="reset-form-button" class="secondary-button" type="button">清空表单</button>
             </div>
-            <div class="status-row">
-              <span id="status-text" class="status-text">准备就绪。</span>
-            </div>
+            <span id="status-text" class="status-text"></span>
           </form>
         </section>
 
         <section class="report-column">
-          <div id="report-shell" class="panel report-shell empty">
-            <div class="empty-state">
-              <p class="eyebrow">匹配输出</p>
-              <h2>还没有匹配结果</h2>
-              <p>保存或填写 Twin 档案后，系统会生成画像，并从数据库候选池中输出 shortlist。</p>
-            </div>
-          </div>
-
           <div class="panel history-shell">
             <div class="panel-head">
-              <h2>已保存 Twin 档案</h2>
-              <p>可以载入档案继续修改，或直接基于已存档案重新匹配。</p>
+              <h2>当前 Twin 状态</h2>
+              <p>只保留 1 个当前 Twin，历史版本仅用于系统内部追踪。</p>
             </div>
-            <div id="profile-list" class="history-list"></div>
+            <div id="current-twin-shell" class="history-list"></div>
           </div>
 
           <div class="panel history-shell">
             <div class="panel-head">
               <h2>最近匹配报告</h2>
-              <p>报告已迁移到 SQLite 持久化存储。</p>
+              <p>这是 Phase 1 的个人匹配摘要，仍可用于回看画像和推荐结果。</p>
             </div>
             <div id="history-list" class="history-list"></div>
           </div>

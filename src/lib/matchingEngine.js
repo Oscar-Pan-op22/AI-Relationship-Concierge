@@ -14,7 +14,7 @@ import {
 } from "./constants.js";
 import { MOCK_CANDIDATE_POOL } from "./mockCandidatePool.js";
 
-export const REPORT_SCHEMA_VERSION = 5;
+export const REPORT_SCHEMA_VERSION = 6;
 
 const CATEGORY_LABELS = Object.fromEntries(
   SENSITIVE_TOPIC_CATEGORIES.map((item) => [item.key, item.label])
@@ -28,8 +28,68 @@ const BAND_RANK = {
   strong: 4
 };
 
+const LEGACY_TEXT_REPLACEMENTS = [
+  ["銆", "、"],
+  ["锛", "，"],
+  ["璁ょ湡", "认真"],
+  ["闀挎湡", "长期"],
+  ["缁撳", "结婚"],
+  ["鍏崇郴", "关系"],
+  ["鍏堜簡瑙", "先了解"],
+  ["闅忕紭", "随缘"],
+  ["鎯宠瀛╁瓙", "想要孩子"],
+  ["鐙珛灏忓搴", "独立小家庭"],
+  ["鐖舵瘝", "父母"],
+  ["鍔″疄", "务实"],
+  ["绋冲畾", "稳定"],
+  ["娑堣垂", "消费"],
+  ["鐩存帴", "直接"],
+  ["鍧﹁瘹", "坦诚"],
+  ["鏄庣‘", "明确"],
+  ["涓€骞村唴", "一年内"],
+  ["涓€鍒", "一到"],
+  ["涓ゅ勾鍐", "两年内"],
+  ["涓婃捣", "上海"],
+  ["鏉窞", "杭州"],
+  ["娣卞湷", "深圳"],
+  ["鑻忓窞", "苏州"],
+  ["宸插疄鍚", "已实名"],
+  ["鍩虹璁よ瘉", "基础认证"],
+  ["鐙敓瀛愬コ", "独生子女"],
+  ["鏈夊厔寮熷濡", "有兄弟姐妹"],
+  ["鏃犺溅", "无车"],
+  ["鏈夎溅", "有车"],
+  ["鏈夋埧鏈夎捶", "有房有贷"],
+  ["鏈夋埧鏃犺捶", "有房无贷"],
+  ["鐙珛绉熸埧", "独立租房"],
+  ["涓庣埗姣嶅悓浣", "与父母同住"]
+];
+
+const CITY_ALIASES = {
+  "上海": "上海",
+  shanghai: "上海",
+  "杭州": "杭州",
+  hangzhou: "杭州",
+  "佹澀宸?": "杭州",
+  "澀宸?": "杭州",
+  "深圳": "深圳",
+  shenzhen: "深圳",
+  "苏州": "苏州",
+  suzhou: "苏州"
+};
+
+function repairLegacyText(value) {
+  let repaired = String(value || "");
+
+  for (const [broken, fixed] of LEGACY_TEXT_REPLACEMENTS) {
+    repaired = repaired.split(broken).join(fixed);
+  }
+
+  return repaired;
+}
+
 function normalizeWhitespace(value) {
-  return String(value || "")
+  return repairLegacyText(value)
     .replace(/\r/g, "\n")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
@@ -40,9 +100,14 @@ function normalizeText(value) {
   return normalizeWhitespace(value).toLowerCase();
 }
 
+function normalizeCityName(value) {
+  const normalized = normalizeWhitespace(value).replace(/市$/u, "");
+  return CITY_ALIASES[normalized.toLowerCase()] || normalized;
+}
+
 function asArray(value) {
   return normalizeWhitespace(value)
-    .split(/[\n,，、；;]/)
+    .split(/[\n,，、；;/]+/u)
     .map((item) => item.trim())
     .filter(Boolean);
 }
@@ -109,13 +174,13 @@ function inferTimeline(text) {
   }
 
   if (
-    /((1|一)\s*年内)|(一年内)|(半年内)|(尽快)|(马上结婚)|(within a year)/.test(normalized)
+    /((1|一)\s*年内)|(一年内)|(半年内)|(尽快)|(马上结婚)|(within a year)/u.test(normalized)
   ) {
     return { value: "within_1_year", label: VALUE_LABELS.marriageTimeline.within_1_year };
   }
 
   if (
-    /((1|一)\s*(到|-|~|至)\s*(2|二)\s*年)|(1-2年)|(一到两年)|(两年内)|(one to two years)/.test(
+    /((1|一)\s*(到|-|~|至)\s*(2|二)\s*年)|(1-2年)|(一到两年)|(两年内)|(one to two years)/u.test(
       normalized
     )
   ) {
@@ -149,7 +214,7 @@ function inferChildrenPreference(text) {
   if (
     includesAny(normalized, [
       "想要孩子",
-      "希望要孩子",
+      "希望未来要孩子",
       "未来要孩子",
       "想生孩子",
       "希望生育",
@@ -270,15 +335,15 @@ function inferCommunicationStyle(text) {
 
 function compareValues(userFact, candidateFact) {
   if (!userFact?.value || userFact.value === "unknown") {
-    return { status: "unclear", reason: "用户在这一维度上的偏好还不够明确。" };
+    return { status: "unclear", reason: "用户在这个维度上的偏好还不够明确。" };
   }
 
   if (!candidateFact?.value || candidateFact.value === "unknown") {
-    return { status: "unclear", reason: "候选人在这一维度上的资料还不够完整。" };
+    return { status: "unclear", reason: "候选人在这个维度上的资料还不够完整。" };
   }
 
   if (userFact.value === candidateFact.value) {
-    return { status: "aligned", reason: "双方在这一维度上基本一致。" };
+    return { status: "aligned", reason: "双方在这个维度上基本一致。" };
   }
 
   const softPairs = new Set([
@@ -298,15 +363,17 @@ function compareValues(userFact, candidateFact) {
     return { status: "mixed", reason: "方向接近，但节奏或明确程度还有差异。" };
   }
 
-  return { status: "conflict", reason: "双方在这一维度上存在明显冲突。" };
+  return { status: "conflict", reason: "双方在这个维度上存在明显冲突。" };
 }
 
 function buildUserFacts(profile) {
+  const preferredCities = profile.cities.map(normalizeCityName).filter(Boolean);
+
   return {
     relationshipGoal: inferRelationshipGoal(`${profile.relationshipGoal}\n${profile.selfSummary}`),
     cityPlan: {
-      value: profile.cities.length ? profile.cities.map((item) => item.toLowerCase()) : ["unknown"],
-      label: profile.cities.length ? profile.cities.join("、") : "未明确"
+      value: preferredCities.length ? preferredCities.map((item) => item.toLowerCase()) : ["unknown"],
+      label: preferredCities.length ? preferredCities.join("、") : "未明确"
     },
     marriageTimeline: inferTimeline(`${profile.marriageTimeline}\n${profile.selfSummary}`),
     childrenPreference: inferChildrenPreference(
@@ -329,8 +396,8 @@ function buildCandidateFacts(candidate) {
         VALUE_LABELS.relationshipGoal.unknown
     },
     cityPlan: {
-      value: candidate.city.toLowerCase(),
-      label: candidate.city
+      value: normalizeCityName(candidate.city).toLowerCase(),
+      label: normalizeCityName(candidate.city)
     },
     marriageTimeline: {
       value: candidate.marriageTimeline,
@@ -375,9 +442,15 @@ function buildMatrix(userFacts, candidateFacts) {
       } else if (!candidateFacts.cityPlan.value) {
         comparison = { status: "unclear", reason: "候选人的城市信息还不完整。" };
       } else if (userFacts.cityPlan.value.includes(candidateFacts.cityPlan.value)) {
-        comparison = { status: "aligned", reason: "候选人所在城市落在用户偏好城市范围内。" };
+        comparison = {
+          status: "aligned",
+          reason: "候选人所在城市落在用户偏好城市范围内。"
+        };
       } else {
-        comparison = { status: "mixed", reason: "当前城市不在偏好列表里，但仍可视情况跨城评估。" };
+        comparison = {
+          status: "mixed",
+          reason: "当前城市不在偏好列表里，但仍可视情况做跨城评估。"
+        };
       }
     } else {
       comparison = compareValues(userFacts[dimension.key], candidateFacts[dimension.key]);
@@ -431,7 +504,7 @@ function detectHardStopMatches(profile, candidate) {
     ].join("\n")
   );
 
-  return profile.hardStops.filter((item) => candidateText.includes(item.toLowerCase()));
+  return profile.hardStops.filter((item) => candidateText.includes(normalizeText(item)));
 }
 
 function evaluateMustHaves(profile, candidate) {
@@ -443,7 +516,7 @@ function evaluateMustHaves(profile, candidate) {
     [candidate.summary, candidate.searchableText, candidate.highlights.join(" ")].join("\n")
   );
 
-  return profile.mustHaves.filter((item) => !candidateText.includes(item.toLowerCase()));
+  return profile.mustHaves.filter((item) => !candidateText.includes(normalizeText(item)));
 }
 
 function buildCandidateRisks(candidate, hardStopMatches) {
@@ -559,7 +632,7 @@ export function normalizeTwinProfile(raw) {
   return {
     displayName: normalizeWhitespace(raw.displayName),
     relationshipGoal: normalizeWhitespace(raw.relationshipGoal),
-    cities: asArray(raw.cities),
+    cities: asArray(raw.cities).map(normalizeCityName),
     mustHaves: asArray(raw.mustHaves),
     hardStops: asArray(raw.hardStops),
     communicationStyle: normalizeWhitespace(raw.communicationStyle),
@@ -668,7 +741,7 @@ function evaluateRealityMatch(field, preference, candidateValue) {
       summary: matched
         ? `现实排除项命中：你不接受“${field.label}”为 ${targetLabel}，当前候选人命中排除条件。`
         : `现实排除项未命中：对方的“${field.label}”没有落在你的不接受范围内。`,
-      nextStep: `无需继续在该项上追问。`,
+      nextStep: "无需继续在该项上追问。",
       scoreDelta: 0,
       isHardStop: matched
     };
@@ -867,7 +940,7 @@ function buildProfileLabel(userFacts) {
     parts.push("消费观要求明确");
   }
 
-  return parts.length ? parts.slice(0, 3).join(" · ") : "待补全画像";
+  return parts.length ? parts.slice(0, 3).join(" · ") : "待补充画像";
 }
 
 function buildTwinSummary(profile, userFacts, realitySummary) {
@@ -883,8 +956,7 @@ function buildTwinSummary(profile, userFacts, realitySummary) {
     profileLabel,
     summary:
       `${displayName} 的 Twin 已生成，当前更偏向“${userFacts.relationshipGoal.label}”，` +
-      `偏好城市集中在 ${preferredCities}，并且对 ${userFacts.familyBoundary.label}、` +
-      `${userFacts.financialView.label} 这两类现实维度更敏感。`,
+      `偏好城市集中在 ${preferredCities}，结婚节奏为 ${userFacts.marriageTimeline.label}。`,
     anchors: [
       `关系目标：${userFacts.relationshipGoal.label}`,
       `偏好城市：${preferredCities}`,
@@ -1006,7 +1078,7 @@ function buildOverallNextSteps(profileGaps, suggestedCompletions, shortlist) {
   if (readyCount > 0 && topCandidate) {
     nextSteps.push(`可优先从 ${topCandidate.displayName} 开启下一阶段的 Twin 预沟通。`);
   } else if (topCandidate) {
-    nextSteps.push(`当前可以先围绕 ${topCandidate.displayName} 补齐关键信息，再决定是否推进。`);
+    nextSteps.push(`当前可先围绕 ${topCandidate.displayName} 补齐关键信息，再决定是否推进。`);
   } else {
     nextSteps.push("当前没有足够合适的 shortlist，建议先补充画像并重新匹配。");
   }
@@ -1019,9 +1091,10 @@ function buildOverallNextSteps(profileGaps, suggestedCompletions, shortlist) {
 
 export function buildMatchReport(payload, options = {}) {
   const twinProfile = normalizeTwinProfile(payload.twinProfile || {});
-  const candidatePool = Array.isArray(options.candidatePool) && options.candidatePool.length
-    ? options.candidatePool
-    : MOCK_CANDIDATE_POOL;
+  const candidatePool =
+    Array.isArray(options.candidatePool) && options.candidatePool.length
+      ? options.candidatePool
+      : MOCK_CANDIDATE_POOL;
   const userFacts = buildUserFacts(twinProfile);
   const profileGaps = buildProfileGaps(twinProfile, userFacts);
   const realitySummary = buildRealitySummary(twinProfile);

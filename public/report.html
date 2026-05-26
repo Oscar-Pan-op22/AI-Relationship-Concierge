@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>同频 · 匹配结果</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">同频 · 匹配结果</p>
+          <h1>独立匹配结果页</h1>
+          <p id="report-hero-text" class="hero-text">
+            这里会展示完整的匹配摘要、现实条件判断、shortlist 与下一步建议。
+          </p>
+        </div>
+        <div class="hero-panel">
+          <div class="metric">
+            <span class="metric-label">Twin 版本</span>
+            <strong id="report-profile-text">等待加载</strong>
+          </div>
+          <nav class="nav-links">
+            <a class="secondary-button link-button" href="/">返回我的 Twin</a>
+            <a class="secondary-button link-button" href="/matches.html">进入双边预沟通</a>
+            <a class="secondary-button link-button" href="/inbox.html">查看待办箱</a>
+          </nav>
+        </div>
+      </header>
+
+      <main class="single-column">
+        <div id="report-shell" class="panel report-shell empty">
+          <div class="empty-state">
+            <p class="eyebrow">报告加载中</p>
+            <h2>正在读取匹配结果</h2>
+            <p>如果长时间没有显示，请返回首页重新生成报告。</p>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script type="module" src="/report.js"></script>
+  </body>
+</html>

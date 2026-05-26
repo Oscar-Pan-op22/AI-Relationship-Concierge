@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>同频 · 双边匹配</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">同频 · 双边匹配</p>
+          <h1>从真实用户中选择预沟通对象</h1>
+          <p class="hero-text">
+            这里展示的是其他已完成 Twin 建档的真实用户。你可以直接发起 Twin-Twin 预沟通邀请。
+          </p>
+        </div>
+        <div class="hero-panel">
+          <div class="metric">
+            <span class="metric-label">当前登录</span>
+            <strong data-current-user>正在加载...</strong>
+          </div>
+          <nav class="nav-links">
+            <a class="secondary-button link-button" href="/">我的 Twin</a>
+            <a class="secondary-button link-button" href="/matches.html">双边匹配</a>
+            <a class="secondary-button link-button" href="/inbox.html">待办箱</a>
+            <button id="logout-button" class="secondary-button" type="button">退出登录</button>
+          </nav>
+        </div>
+      </header>
+
+      <main class="single-column">
+        <section class="panel report-shell">
+          <div class="panel-head">
+            <h2>匹配列表</h2>
+            <p id="matches-status" class="status-text">正在加载匹配列表...</p>
+          </div>
+          <div id="matches-list" class="stack-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/matches.js"></script>
+  </body>
+</html>

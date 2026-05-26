@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>同频 · 登录</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero hero-auth">
+        <div class="hero-copy">
+          <p class="eyebrow">同频 · Phase 2</p>
+          <h1>登录后进入 Twin-Twin 预沟通</h1>
+          <p class="hero-text">
+            这一阶段支持双真实用户、多用户 Twin、双边匹配、透明预沟通和逐题敏感授权。
+          </p>
+        </div>
+        <div class="hero-panel">
+          <div class="metric">
+            <span class="metric-label">当前能力</span>
+            <strong>最小真实登录、双边匹配、Twin-Twin 预沟通、逐题敏感授权</strong>
+          </div>
+        </div>
+      </header>
+
+      <main class="auth-layout">
+        <section class="panel form-panel">
+          <div class="panel-head">
+            <h2>注册</h2>
+            <p>用于测试双真实用户平台。当前不做邮箱验证。</p>
+          </div>
+          <form id="register-form">
+            <label>
+              <span>邮箱</span>
+              <input name="email" type="email" placeholder="a@example.com" required />
+            </label>
+            <label>
+              <span>显示名称</span>
+              <input name="displayName" placeholder="雨涵" required />
+            </label>
+            <label>
+              <span>密码</span>
+              <input name="password" type="password" placeholder="至少 6 位" required />
+            </label>
+            <button class="primary-button" type="submit">注册并进入</button>
+          </form>
+        </section>
+
+        <section class="panel form-panel">
+          <div class="panel-head">
+            <h2>登录</h2>
+            <p>可以分别在两个浏览器窗口登录 A/B 账号做双边测试。</p>
+          </div>
+          <form id="login-form">
+            <label>
+              <span>邮箱</span>
+              <input name="email" type="email" placeholder="a@example.com" required />
+            </label>
+            <label>
+              <span>密码</span>
+              <input name="password" type="password" placeholder="你的密码" required />
+            </label>
+            <button class="primary-button" type="submit">登录</button>
+          </form>
+        </section>
+      </main>
+
+      <p id="auth-status" class="status-text auth-status"></p>
+    </div>
+
+    <script type="module" src="/auth.js"></script>
+  </body>
+</html>

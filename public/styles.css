@@ -49,6 +49,10 @@ body::before {
   padding: 32px 24px 48px;
 }
 
+.single-column {
+  display: grid;
+}
+
 .hero {
   display: grid;
   grid-template-columns: 1.8fr 1fr;
@@ -113,6 +117,11 @@ body::before {
   border-bottom: 1px solid var(--line);
 }
 
+.metric strong {
+  display: block;
+  line-height: 1.6;
+}
+
 .metric:last-of-type {
   border-bottom: none;
   padding-bottom: 0;
@@ -153,6 +162,35 @@ body::before {
 .empty-state p,
 .status-text {
   color: var(--muted);
+  transition: color 180ms ease;
+}
+
+.status-text:empty {
+  display: none;
+}
+
+.auth-status {
+  margin: 16px 4px 0;
+}
+
+.status-text[data-state="idle"] {
+  color: var(--muted);
+}
+
+.status-text[data-state="pending"] {
+  color: #9b5a38;
+}
+
+.status-text[data-state="saving"] {
+  color: var(--ink);
+}
+
+.status-text[data-state="saved"] {
+  color: #2f6f4f;
+}
+
+.status-text[data-state="error"] {
+  color: #b23a30;
 }
 
 .candidate-head {
@@ -352,17 +390,96 @@ select {
   margin-top: 10px;
 }
 
-button {
+.page-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.auth-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.inline-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.thread-list {
+  display: grid;
+  gap: 12px;
+}
+
+.turn-card {
+  padding: 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(23, 51, 43, 0.08);
+}
+
+.turn-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.turn-card.initiator {
+  background: rgba(255, 251, 246, 0.88);
+}
+
+.turn-card.counterparty {
+  background: rgba(242, 234, 223, 0.66);
+}
+
+.turn-card.system {
+  background: rgba(23, 51, 43, 0.05);
+}
+
+.decision-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.page-actions .link-button {
+  min-height: 48px;
+  padding: 14px 24px;
+}
+
+button,
+.link-button {
   border: none;
   border-radius: 999px;
   padding: 14px 22px;
   font: inherit;
   font-weight: 700;
-  cursor: pointer;
   transition: transform 150ms ease, opacity 150ms ease;
 }
 
-button:hover {
+button {
+  cursor: pointer;
+}
+
+button:hover,
+.link-button:hover {
   transform: translateY(-1px);
 }
 
@@ -376,10 +493,24 @@ button:hover {
   color: var(--ink);
 }
 
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  line-height: 1;
+}
+
 .report-shell.empty {
   min-height: 420px;
   display: grid;
   place-items: center;
+}
+
+.report-shell {
+  border-radius: 30px;
+  background:
+    linear-gradient(180deg, rgba(255, 250, 244, 0.98), rgba(248, 239, 228, 0.88));
 }
 
 .report-topline {
@@ -432,13 +563,14 @@ button:hover {
 
 .report-grid {
   display: grid;
-  gap: 18px;
+  gap: 20px;
 }
 
 .report-section {
-  padding: 18px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.72);
+  padding: 22px;
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(248, 240, 231, 0.76));
   border: 1px solid rgba(23, 51, 43, 0.08);
 }
 
@@ -467,9 +599,14 @@ button:hover {
 .stack-item,
 .history-item {
   padding: 14px;
-  border-radius: 16px;
+  border-radius: 22px;
   background: rgba(242, 234, 223, 0.55);
   border: 1px solid rgba(23, 51, 43, 0.08);
+}
+
+.report-shell .stack-item,
+.report-shell .history-item {
+  background: rgba(255, 251, 246, 0.82);
 }
 
 .matrix-item header,
@@ -528,6 +665,16 @@ button:hover {
   color: var(--ok);
 }
 
+.pill.ok {
+  background: rgba(35, 86, 65, 0.12);
+  color: var(--ok);
+}
+
+.pill.warn {
+  background: rgba(140, 95, 20, 0.12);
+  color: var(--warn);
+}
+
 .stack-item p,
 .matrix-item p,
 .history-item p,
@@ -571,6 +718,11 @@ button:hover {
   background: rgba(255, 249, 242, 0.92);
 }
 
+.report-topline .badge,
+.report-topline .pill {
+  box-shadow: inset 0 0 0 1px rgba(23, 51, 43, 0.04);
+}
+
 code {
   font-family: Consolas, "SFMono-Regular", monospace;
 }
@@ -601,7 +753,9 @@ code {
 
   .field-grid,
   .checkbox-grid,
-  .reality-grid {
+  .reality-grid,
+  .auth-layout,
+  .meta-grid {
     grid-template-columns: 1fr;
   }
 

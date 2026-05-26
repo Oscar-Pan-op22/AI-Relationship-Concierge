@@ -1,1 +1,1 @@
-export { loadReports, saveReport } from "./database.js";
+export { getReport, loadReports, saveReport } from "./database.js";
