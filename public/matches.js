@@ -1,4 +1,11 @@
-import { escapeHtml, fetchJson, logout, requireAuth } from "./common.js";
+import {
+  escapeHtml,
+  fetchJson,
+  getPrechatStatusLabel,
+  getPrechatStatusTone,
+  logout,
+  requireAuth
+} from "./common.js";
 
 const matchesList = document.querySelector("#matches-list");
 const statusText = document.querySelector("#matches-status");
@@ -33,6 +40,11 @@ function renderMatches(matches) {
           <p><strong>简介：</strong>${escapeHtml(match.counterpart.summary)}</p>
           <p><strong>匹配判断：</strong>${escapeHtml(match.scoreLabel)}</p>
           <p><strong>推荐理由：</strong>${escapeHtml((match.reasons || []).join("；") || "暂无")}</p>
+          ${
+            match.openSession
+              ? `<p><strong>当前状态：</strong><span class="pill ${escapeHtml(getPrechatStatusTone(match.openSession.status))}">${escapeHtml(getPrechatStatusLabel(match.openSession.status))}</span></p>`
+              : `<p><strong>当前状态：</strong>尚未开始预沟通</p>`
+          }
           <div class="page-actions">
             ${
               match.openSession

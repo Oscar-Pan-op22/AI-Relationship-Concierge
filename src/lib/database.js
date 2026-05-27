@@ -1374,7 +1374,11 @@ export function getInboxForUser(userId) {
         counterpartyUserId: row.counterparty_user_id,
         status: row.status
       }
-    }));
+    }))
+    .filter((item) => {
+      const initiator = getUserById(item.payload.initiatorUserId);
+      return initiator && !isBrokenPlaceholderText(initiator.displayName);
+    });
 
   const sensitive = database
     .prepare(`
@@ -1395,7 +1399,11 @@ export function getInboxForUser(userId) {
         topicCategory: row.topic_category,
         requestingUserId: row.requesting_user_id
       }
-    }));
+    }))
+    .filter((item) => {
+      const requester = getUserById(item.payload.requestingUserId);
+      return requester && !isBrokenPlaceholderText(requester.displayName);
+    });
 
   const humanInput = database
     .prepare(`

@@ -5,7 +5,7 @@ This script focuses on OpenAI-compatible endpoints only.
 
 Default target:
   - base_url: http://localhost:8003/v1
-  - model: claude-3-5-sonnet-20241022
+  - model: Qwen3.6-35B-A3B-FP8
   - api_key: EMPTY
 
 Examples:
@@ -29,7 +29,7 @@ from typing import Any
 
 
 DEFAULT_BASE_URL = "http://localhost:8003/v1"
-DEFAULT_MODEL = "claude-3-5-sonnet-20241022"
+DEFAULT_MODEL = "Qwen3.6-35B-A3B-FP8"
 DEFAULT_API_KEY = "EMPTY"
 DEFAULT_NO_PROXY = "localhost,127.0.0.1,::1,100.91.101.3,100.115.84.122"
 

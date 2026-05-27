@@ -42,10 +42,12 @@ import {
   applySessionDecision,
   approveSensitiveQuestion,
   createPrechatInvitation,
+  getSessionViewWithAutoRecovery,
   getSessionView,
   rejectInvitation,
   rejectSensitiveQuestion,
   runSessionRound,
+  sendManualMessage,
   submitHumanInput
 } from "./lib/prechatService.js";
 import { REALITY_FIELD_DEFS, SENSITIVE_TOPIC_CATEGORIES } from "./lib/constants.js";
@@ -198,6 +200,54 @@ async function ensureAutoPrechatSessions(userId) {
   }
 
   return createdSessions;
+}
+
+function saveUserPrechatPlan(userId, matchIds, objectiveKeys) {
+  const currentTwin = getCurrentTwin(userId);
+
+  if (!currentTwin) {
+    throw new Error("确认预沟通计划前，需要先保存当前 Twin。");
+  }
+
+  const nextProfile = {
+    ...currentTwin.twinProfile,
+    prechatGoals: {
+      selectedMatchIds: [...new Set(matchIds)],
+      selectedObjectiveKeys: [...new Set(objectiveKeys)],
+      confirmedAt: new Date().toISOString()
+    }
+  };
+
+  return saveCurrentTwin(userId, nextProfile);
+}
+
+async function activatePrechatPlan(userId, matchIds, objectiveKeys) {
+  const availableMatches = refreshMatchesForUser(userId);
+  const availableIds = new Set(availableMatches.map((match) => match.id));
+  const selectedMatchIds = [...new Set(matchIds)].filter((id) => availableIds.has(id));
+  const selectedObjectiveKeys = [...new Set(objectiveKeys)].filter(Boolean);
+
+  if (!selectedMatchIds.length) {
+    throw new Error("请先至少选择 1 个要进入预沟通的对象。");
+  }
+
+  if (!selectedObjectiveKeys.length) {
+    throw new Error("请先至少确认 1 个预沟通目标。");
+  }
+
+  const twin = saveUserPrechatPlan(userId, selectedMatchIds, selectedObjectiveKeys);
+  const sessions = [];
+
+  for (const matchId of selectedMatchIds) {
+    const session = await createPrechatInvitation(matchId, userId, createPrechatSession);
+    sessions.push(session);
+  }
+
+  return {
+    twin,
+    sessions,
+    prechatOverview: buildPrechatOverview(userId)
+  };
 }
 
 function buildPrechatOverview(userId) {
@@ -444,7 +494,6 @@ export function createAppServer() {
         }
 
         const report = buildReportFromTwin(user.id, twin);
-        await ensureAutoPrechatSessions(user.id);
         sendJson(response, 201, { report: attachPrechatOverview(report, user.id), twin });
         return;
       }
@@ -468,6 +517,18 @@ export function createAppServer() {
 
         const session = await createPrechatInvitation(matchId, user.id, createPrechatSession);
         sendJson(response, 201, { session });
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/prechat/plan") {
+        const user = requireUserOrThrow(request);
+        const payload = await parseBody(request);
+        const result = await activatePrechatPlan(
+          user.id,
+          Array.isArray(payload.matchIds) ? payload.matchIds : [],
+          Array.isArray(payload.objectiveKeys) ? payload.objectiveKeys : []
+        );
+        sendJson(response, 201, result);
         return;
       }
 
@@ -505,7 +566,7 @@ export function createAppServer() {
       if (request.method === "GET" && /^\/api\/prechat\/sessions\/[^/]+$/u.test(url.pathname)) {
         const user = requireUserOrThrow(request);
         const sessionId = extractId(url.pathname, "/api/prechat/sessions/");
-        const session = getSessionView(sessionId, user.id);
+        const session = await getSessionViewWithAutoRecovery(sessionId, user.id);
 
         if (!session) {
           sendJson(response, 404, { error: "未找到该预沟通会话。" });
@@ -545,6 +606,20 @@ export function createAppServer() {
 
         const session = await submitHumanInput(payload.requestId, user.id, payload.responseText);
         sendJson(response, 200, { session, sessionId });
+        return;
+      }
+
+      if (request.method === "POST" && /^\/api\/prechat\/sessions\/[^/]+\/manual-message$/u.test(url.pathname)) {
+        const user = requireUserOrThrow(request);
+        const sessionId = extractId(url.pathname, "/api/prechat/sessions/", "/manual-message");
+        const payload = await parseBody(request);
+
+        if (!payload.content) {
+          throw new Error("缺少要发送的消息内容。");
+        }
+
+        const session = await sendManualMessage(sessionId, user.id, payload.content);
+        sendJson(response, 201, { session, sessionId });
         return;
       }
 

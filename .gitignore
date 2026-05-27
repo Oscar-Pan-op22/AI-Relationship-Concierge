@@ -1,5 +1,6 @@
 node_modules/
 data/*.json
+data/*.jsonl
 data/*.sqlite
 data/*.sqlite-*
 Thumbs.db
