@@ -20,6 +20,7 @@ import {
   listConversationTurns,
   listExtractedFacts,
   resolveHumanInputRequest,
+  rejectSiblingPendingInvitations,
   saveCurrentTwin,
   saveExtractedFacts,
   updatePrechatSession,
@@ -860,6 +861,7 @@ export async function acceptInvitation(sessionId, currentUserId) {
   }
 
   updatePrechatSession(session.id, { status: "active" });
+  rejectSiblingPendingInvitations(session.matchId, session.id);
   const acceptedSession = getPrechatSessionForUser(session.id, currentUserId);
 
   if (acceptedSession && isAutoModeEnabledForSession(acceptedSession)) {
@@ -878,6 +880,7 @@ export async function rejectInvitation(sessionId, currentUserId) {
   }
 
   updatePrechatSession(session.id, { status: "rejected" });
+  rejectSiblingPendingInvitations(session.matchId, session.id);
   return getPrechatSessionForUser(session.id, currentUserId);
 }
 
@@ -892,7 +895,7 @@ export async function runSessionRound(sessionId, currentUserId) {
     throw new Error("当前会话状态下不能继续运行新一轮。");
   }
 
-  if (["blocked_risk", "rejected", "completed"].includes(session.status)) {
+  if (["blocked_risk"].includes(session.status)) {
     throw new Error("当前会话已结束，无法继续。");
   }
 
@@ -1073,7 +1076,7 @@ export async function sendManualMessage(sessionId, currentUserId, content) {
     throw new Error("当前状态下不能直接发送真人消息。");
   }
 
-  if (["blocked_risk", "rejected", "completed"].includes(session.status)) {
+  if (["blocked_risk", "rejected"].includes(session.status)) {
     throw new Error("当前会话已结束，无法继续发送消息。");
   }
 
@@ -1086,7 +1089,21 @@ export async function sendManualMessage(sessionId, currentUserId, content) {
   let round = null;
   const rounds = listPrechatRounds(session.id);
 
-  if (rounds.length) {
+  if (session.status === "completed") {
+    const roundNumber = session.currentRound + 1;
+    round = createPrechatRound({
+      sessionId: session.id,
+      roundNumber,
+      objective: {
+        topics: buildObjectives(
+          getCurrentTwin(session.initiatorUserId),
+          getCurrentTwin(session.counterpartyUserId),
+          listExtractedFacts(session.id)
+        )
+      }
+    });
+    updatePrechatSession(session.id, { status: "active", currentRound: roundNumber });
+  } else if (rounds.length) {
     round = rounds[rounds.length - 1];
   } else {
     const roundNumber = 1;
@@ -1117,7 +1134,7 @@ export async function sendManualMessage(sessionId, currentUserId, content) {
     }
   });
 
-  if (["paused_review", "handoff_ready"].includes(session.status)) {
+  if (["paused_review", "handoff_ready", "completed"].includes(session.status)) {
     updatePrechatSession(session.id, { status: "active" });
   }
 

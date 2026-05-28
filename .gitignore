@@ -3,5 +3,6 @@ data/*.json
 data/*.jsonl
 data/*.sqlite
 data/*.sqlite-*
+data/*.bak-*
 Thumbs.db
 .DS_Store

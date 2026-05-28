@@ -3,7 +3,6 @@ import {
   fetchJson,
   formatDateTime,
   getPrechatStatusLabel,
-  getPrechatStatusTone,
   logout,
   renderEmptyState,
   requireAuth
@@ -16,6 +15,7 @@ const logoutButton = document.querySelector("#logout-button");
 const sessionId = new URL(window.location.href).searchParams.get("sessionId");
 
 let currentUser = null;
+
 const FACT_KEY_LABELS = {
   relationshipGoal: "关系目标",
   cities: "长期城市安排",
@@ -34,6 +34,7 @@ const FACT_KEY_LABELS = {
   parentCareBurden: "父母照护压力",
   postMaritalLivingPreference: "婚后居住取向"
 };
+
 const NEXT_ACTION_LABELS = {
   continue: "继续自动推进",
   pause_review: "暂停并等待查看阶段结论",
@@ -46,30 +47,11 @@ function setStatus(state, message) {
   sessionStatus.textContent = message;
 }
 
-function actionButton(label, action, tone = "secondary-button") {
-  return `<button class="${tone}" type="button" data-action="${escapeHtml(action)}">${escapeHtml(label)}</button>`;
+function actionButton(label, action, tone = "secondary-button", extra = "") {
+  return `<button class="${tone}" type="button" data-action="${escapeHtml(action)}" ${extra}>${escapeHtml(label)}</button>`;
 }
 
-function getConversationPerspective(session) {
-  return session.currentUserRole === "initiator"
-    ? {
-        selfUserId: session.initiator.id,
-        selfLabel: "你的 Twin",
-        counterpartLabel: `${session.counterparty.displayName} 的 Twin`
-      }
-    : {
-        selfUserId: session.counterparty.id,
-        selfLabel: "你的 Twin",
-        counterpartLabel: `${session.initiator.displayName} 的 Twin`
-      };
-}
-
-function getDisplayNameInitial(name) {
-  const text = String(name || "").trim();
-  return text ? text.slice(0, 1).toUpperCase() : "T";
-}
-
-function getParticipantSummary(session, actorUserId) {
+function getParticipant(session, actorUserId) {
   if (actorUserId === session.initiator.id) {
     return {
       id: session.initiator.id,
@@ -85,13 +67,26 @@ function getParticipantSummary(session, actorUserId) {
   };
 }
 
-function renderAvatar(summary, { isTwin = false } = {}) {
+function getCounterpart(session) {
+  return session.currentUserRole === "initiator" ? session.counterparty : session.initiator;
+}
+
+function getCurrentUserId(session) {
+  return session.currentUserRole === "initiator" ? session.initiator.id : session.counterparty.id;
+}
+
+function getInitial(name) {
+  const text = String(name || "").trim();
+  return text ? text.slice(0, 1).toUpperCase() : "T";
+}
+
+function renderAvatar(participant, { isTwin = false } = {}) {
   return `
     <div class="chat-avatar-shell">
-      <div class="chat-avatar ${escapeHtml(summary.tone)}" aria-hidden="true">
-        <span>${escapeHtml(getDisplayNameInitial(summary.displayName))}</span>
+      <div class="chat-avatar ${escapeHtml(participant.tone)}" aria-hidden="true">
+        <span>${escapeHtml(getInitial(participant.displayName))}</span>
       </div>
-      ${isTwin ? `<span class="chat-avatar-badge">数字分身</span>` : ""}
+      ${isTwin ? '<span class="chat-avatar-badge">数字分身</span>' : ""}
     </div>
   `;
 }
@@ -110,7 +105,7 @@ function renderTurn(turn, session) {
   if (isManualReviewNotice(turn)) {
     return `
       <article class="chat-inline-notice-row">
-        <p class="chat-inline-notice">本轮因模型输出不稳定已暂停，等待你本人继续。</p>
+        <p class="chat-inline-notice">这一轮因模型输出不稳定已暂停，等待你本人继续。</p>
       </article>
     `;
   }
@@ -123,26 +118,15 @@ function renderTurn(turn, session) {
     `;
   }
 
-  const perspective = getConversationPerspective(session);
   const isHuman = String(turn.actorRole || "").endsWith("_user");
-  const bubbleType = turn.actorUserId === perspective.selfUserId ? "mine" : "theirs";
-  const participant = getParticipantSummary(session, turn.actorUserId);
-  const roleLabel =
-    bubbleType === "mine"
-      ? isHuman
-        ? "你本人"
-        : perspective.selfLabel
-      : isHuman
-        ? "对方本人"
-        : perspective.counterpartLabel;
+  const isMine = turn.actorUserId === getCurrentUserId(session);
+  const participant = getParticipant(session, turn.actorUserId);
+  const bubbleType = isMine ? "mine" : "theirs";
 
   return `
     <article class="chat-message-row ${escapeHtml(bubbleType)}">
       ${bubbleType === "theirs" ? renderAvatar(participant, { isTwin: !isHuman }) : ""}
       <div class="chat-message-stack ${escapeHtml(bubbleType)}">
-        <div class="chat-role-label ${escapeHtml(bubbleType)}">
-          <strong>${escapeHtml(roleLabel)}</strong>
-        </div>
         <div class="chat-bubble ${escapeHtml(bubbleType)}">
           <p>${escapeHtml(turn.content)}</p>
         </div>
@@ -152,21 +136,9 @@ function renderTurn(turn, session) {
   `;
 }
 
-function getFactKeyLabel(key) {
-  return FACT_KEY_LABELS[key] || key || "已确认信息";
-}
-
-function getFactSubjectLabel(fact) {
-  if (fact.subjectUserId === currentUser?.id || fact.subjectUserId === "self") {
-    return "你";
-  }
-
-  return "对方";
-}
-
 function dedupeFacts(facts) {
   const seen = new Set();
-  const next = [];
+  const result = [];
 
   for (const fact of facts) {
     const signature = [
@@ -180,33 +152,40 @@ function dedupeFacts(facts) {
     }
 
     seen.add(signature);
-    next.push(fact);
+    result.push(fact);
   }
 
-  return next;
+  return result;
 }
 
-function getNextActionLabel(value) {
-  return NEXT_ACTION_LABELS[value] || value || "继续自动推进";
+function getFactSubjectLabel(fact) {
+  if (fact.subjectUserId === currentUser?.id || fact.subjectUserId === "self") {
+    return "你";
+  }
+
+  return "对方";
 }
 
 function renderFacts(facts) {
-  if (!facts.length) {
+  const cleanFacts = dedupeFacts(facts);
+
+  if (!cleanFacts.length) {
     return `<article class="stack-item"><p>当前还没有提取出的已确认事实。</p></article>`;
   }
 
-  return facts
-    .map(
-      (fact) => `
+  return cleanFacts
+    .map((fact) => {
+      const label = FACT_KEY_LABELS[fact.key] || fact.key || "已确认信息";
+      return `
         <article class="stack-item">
           <header>
-            <strong>${escapeHtml(fact.key)}</strong>
+            <strong>${escapeHtml(`${getFactSubjectLabel(fact)} · ${label}`)}</strong>
             <span class="pill low">置信度 ${escapeHtml(String(fact.confidence))}</span>
           </header>
           <p>${escapeHtml(fact.value)}</p>
         </article>
-      `
-    )
+      `;
+    })
     .join("");
 }
 
@@ -216,23 +195,29 @@ function renderStageReports(stageReports) {
   }
 
   return stageReports
-    .map(
-      (report) => `
+    .map((report) => {
+      const unresolved = Array.isArray(report.payload.unresolved_questions)
+        ? report.payload.unresolved_questions
+        : [];
+      const nextAction =
+        NEXT_ACTION_LABELS[report.payload.next_action] || report.payload.next_action || "继续自动推进";
+
+      return `
         <article class="stack-item">
           <header>
             <strong>阶段总结</strong>
             <span class="pill medium">${escapeHtml(formatDateTime(report.createdAt))}</span>
           </header>
           <p><strong>摘要：</strong>${escapeHtml(report.payload.summary || "暂无")}</p>
-          <p><strong>未决问题：</strong>${escapeHtml((report.payload.unresolved_questions || []).join("；") || "暂无")}</p>
-          <p><strong>下一步：</strong>${escapeHtml(report.payload.next_action || "pause_review")}</p>
+          <p><strong>未决问题：</strong>${escapeHtml(unresolved.join("、") || "暂无")}</p>
+          <p><strong>下一步：</strong>${escapeHtml(nextAction)}</p>
         </article>
-      `
-    )
+      `;
+    })
     .join("");
 }
 
-function renderSensitiveRequests(session, currentUserId, requests) {
+function renderSensitiveRequests(session, requests) {
   if (!requests.length) {
     return "";
   }
@@ -247,7 +232,7 @@ function renderSensitiveRequests(session, currentUserId, requests) {
               request.targetUserId === session.initiator.id
                 ? session.initiator.displayName
                 : session.counterparty.displayName;
-            const canAct = request.status === "pending" && request.targetUserId === currentUserId;
+            const canAct = request.status === "pending" && request.targetUserId === currentUser?.id;
 
             return `
               <article class="stack-item">
@@ -274,116 +259,6 @@ function renderSensitiveRequests(session, currentUserId, requests) {
   `;
 }
 
-function renderInlinePauseComposer(session, humanInputRequests = []) {
-  const pending = humanInputRequests.find((request) => request.status === "pending");
-
-  if (!pending || pending.fieldKey === "manual_review") {
-    return "";
-  }
-
-  return `
-    <article class="chat-inline-notice-row">
-      <p class="chat-inline-notice">${escapeHtml(
-        pending.targetUserId === currentUser?.id ? "当前会话正在等待你本人补充后继续。" : "当前会话正在等待对方本人补充后继续。"
-      )}</p>
-    </article>
-  `;
-}
-
-function renderDirectComposer(session, humanInputRequests = []) {
-  if (["awaiting_counterparty_acceptance", "rejected", "completed", "blocked_risk"].includes(session.status)) {
-    return "";
-  }
-
-  const pending = humanInputRequests.find(
-    (request) => request.status === "pending" && request.targetUserId === currentUser?.id
-  );
-  const isManualReview = pending?.fieldKey === "manual_review";
-  const usesHumanInputFlow = Boolean(pending);
-  const hint = usesHumanInputFlow
-    ? isManualReview
-      ? "模型异常已暂停。你可以直接发一条真人说明继续推进。"
-      : "当前会话在等你补充。你发出的内容会以“你本人”身份公开写入线程。"
-    : "你可以随时以“你本人”身份直接发消息。";
-
-  return `
-    <section class="message-composer">
-      <p class="composer-status ${escapeHtml(usesHumanInputFlow ? (isManualReview ? "warn" : "medium") : "normal")}">${escapeHtml(hint)}</p>
-      <form
-        class="composer-form-inline"
-        data-direct-message-form
-        ${usesHumanInputFlow ? `data-request-id="${escapeHtml(pending.id)}"` : ""}
-      >
-        <textarea
-          name="content"
-          rows="4"
-          placeholder="${escapeHtml(
-            usesHumanInputFlow
-              ? isManualReview
-                ? "输入你想以本人身份补充的说明"
-                : "输入你要补充给对方的内容"
-              : "输入你想以本人身份发送的内容"
-          )}"
-        ></textarea>
-        <div class="composer-footer">
-          <span class="composer-note">${escapeHtml(usesHumanInputFlow ? "发送后会继续这条会话" : "该消息会公开写入透明线程")}</span>
-          <button class="primary-button composer-send-button" type="submit">${escapeHtml(
-            usesHumanInputFlow ? "发送并继续" : "发送"
-          )}</button>
-        </div>
-      </form>
-    </section>
-  `;
-}
-
-function renderActions(detail) {
-  const { session } = detail;
-  const actions = [];
-
-  if (session.status === "awaiting_counterparty_acceptance" && session.currentUserRole === "counterparty") {
-    actions.push(actionButton("接受邀请", "accept-invitation", "primary-button"));
-    actions.push(actionButton("拒绝邀请", "reject-invitation"));
-  }
-
-  if (["active", "paused_review"].includes(session.status)) {
-    actions.push(actionButton("继续一轮", "run-round", "primary-button"));
-    actions.push(actionButton("暂停观察", "pause-session"));
-    actions.push(actionButton("结束推进", "reject-session"));
-    actions.push(actionButton("进入真人接手", "handoff-session"));
-  }
-
-  if (session.status === "handoff_ready") {
-    actions.push(actionButton("重新跑一轮", "run-round", "primary-button"));
-    actions.push(actionButton("结束推进", "reject-session"));
-  }
-
-  if (!actions.length) {
-    return "";
-  }
-
-  return `<div class="chat-panel-actions">${actions.join("")}</div>`;
-}
-
-function renderTransparencyCard(session) {
-  const counterpart =
-    session.currentUserRole === "initiator" ? session.counterparty.displayName : session.initiator.displayName;
-
-  return `
-    <section class="messenger-banner">
-      <div class="messenger-banner-copy">
-        <p class="eyebrow">透明预沟通</p>
-        <h3>你正在与 ${escapeHtml(counterpart)} 的 Twin 对话</h3>
-        <p>这是平台内的透明 Twin-Twin 预沟通。双方都能看到完整线程；敏感问题不会直接发出，必须先由被问方逐题授权。</p>
-      </div>
-      <div class="messenger-banner-tags">
-        <span class="pill low">双方可见</span>
-        <span class="pill medium">敏感问题逐题授权</span>
-        <span class="pill ok">禁止真人承诺代发</span>
-      </div>
-    </section>
-  `;
-}
-
 function renderObjectiveProgress(stageReports) {
   const latest = stageReports[0]?.payload;
   const progress = latest?.objective_progress || [];
@@ -402,87 +277,144 @@ function renderObjectiveProgress(stageReports) {
       <h4>本轮议题进展</h4>
       <div class="progress-list">
         ${progress
-          .map(
-            (item) => `
+          .map((item) => {
+            const label =
+              item.status === "confirmed" ? "已确认" : item.status === "pending" ? "待推进" : "未解决";
+            const tone = item.status === "confirmed" ? "ok" : item.status === "pending" ? "medium" : "low";
+
+            return `
               <div class="progress-item">
                 <strong>${escapeHtml(item.label)}</strong>
-                <span class="pill ${escapeHtml(item.status === "confirmed" ? "ok" : item.status === "pending" ? "medium" : "low")}">
-                  ${escapeHtml(item.status === "confirmed" ? "已确认" : item.status === "pending" ? "待推进" : "未解决")}
-                </span>
+                <span class="pill ${escapeHtml(tone)}">${escapeHtml(label)}</span>
               </div>
-            `
-          )
+            `;
+          })
           .join("")}
       </div>
     </div>
   `;
 }
 
-function renderSessionSidebar(detail) {
-  const { session, stageReports, facts, sensitiveRequests } = detail;
+function renderInlinePauseNotice(humanInputRequests = []) {
+  const pending = humanInputRequests.find((request) => request.status === "pending");
+
+  if (!pending || pending.fieldKey === "manual_review") {
+    return "";
+  }
+
+  const text =
+    pending.targetUserId === currentUser?.id
+      ? "当前会话正在等待你本人补充后继续。"
+      : "当前会话正在等待对方本人补充后继续。";
 
   return `
-    <aside class="messenger-sidebar">
-      <div class="summary-card">
-        <h4>会话状态</h4>
-        <div class="status-stack">
-          <div class="status-row-card">
-            <span>当前状态</span>
-            <strong>${escapeHtml(getPrechatStatusLabel(session.status))}</strong>
-          </div>
-          <div class="status-row-card">
-            <span>当前轮次</span>
-            <strong>第 ${escapeHtml(String(session.currentRound))} 轮</strong>
-          </div>
-          <div class="status-row-card">
-            <span>创建时间</span>
-            <strong>${escapeHtml(formatDateTime(session.createdAt))}</strong>
-          </div>
-          <div class="status-row-card">
-            <span>最近更新</span>
-            <strong>${escapeHtml(formatDateTime(session.updatedAt))}</strong>
-          </div>
-        </div>
-      </div>
+    <article class="chat-inline-notice-row">
+      <p class="chat-inline-notice">${escapeHtml(text)}</p>
+    </article>
+  `;
+}
 
-      ${renderObjectiveProgress(stageReports)}
+function renderDirectComposer(session, humanInputRequests = []) {
+  if (["awaiting_counterparty_acceptance", "rejected", "blocked_risk"].includes(session.status)) {
+    return "";
+  }
+
+  const pending = humanInputRequests.find(
+    (request) => request.status === "pending" && request.targetUserId === currentUser?.id
+  );
+
+  return `
+    <section class="message-composer">
+      <form
+        class="composer-form-inline"
+        data-direct-message-form
+        ${pending ? `data-request-id="${escapeHtml(pending.id)}"` : ""}
+      >
+        <div class="composer-input-shell">
+          <textarea name="content" rows="3" placeholder=""></textarea>
+          <button class="primary-button composer-send-button composer-send-button--floating" type="submit">发送</button>
+        </div>
+      </form>
+    </section>
+  `;
+}
+
+function renderActions(detail) {
+  const { session } = detail;
+  const actions = [];
+
+  if (session.status === "awaiting_counterparty_acceptance" && session.currentUserRole === "counterparty") {
+    actions.push(actionButton("接受邀请", "accept-invitation", "primary-button"));
+    actions.push(actionButton("拒绝邀请", "reject-invitation"));
+  }
+
+  if (["active", "paused_review"].includes(session.status)) {
+    actions.push(actionButton("暂停观察", "pause-session"));
+    actions.push(actionButton("结束推进", "reject-session"));
+    actions.push(actionButton("进入真人接手", "handoff-session"));
+  }
+
+  if (session.status === "handoff_ready") {
+    actions.push(actionButton("结束推进", "reject-session"));
+  }
+
+  if (!actions.length) {
+    return "";
+  }
+
+  return `<div class="chat-panel-actions">${actions.join("")}</div>`;
+}
+
+function renderTransparencyCard(session) {
+  const counterpart = getCounterpart(session);
+
+  return `
+    <section class="messenger-banner">
+      <div class="messenger-banner-copy">
+        <p class="eyebrow">透明预沟通</p>
+        <h3>你正在与 ${escapeHtml(counterpart.displayName)} 的 Twin 对话</h3>
+        <p>这是平台内的透明 Twin-Twin 预沟通。双方都能看到完整线程；敏感问题不会直接发出，必须先由被问方逐题授权。</p>
+      </div>
+      <div class="messenger-banner-tags">
+        <span class="pill low">双方可见</span>
+        <span class="pill medium">敏感问题逐题授权</span>
+        <span class="pill ok">禁止真人承诺代发</span>
+      </div>
+    </section>
+  `;
+}
+
+function renderSidebar(detail) {
+  return `
+    <aside class="messenger-sidebar">
+      ${renderObjectiveProgress(detail.stageReports)}
 
       <div class="summary-card">
         <h4>已确认事实</h4>
-        <div class="stack-list compact-list">${renderFacts(facts)}</div>
+        <div class="stack-list compact-list">${renderFacts(detail.facts)}</div>
       </div>
 
       <div class="summary-card">
         <h4>阶段报告</h4>
-        <div class="stack-list compact-list">${renderStageReports(stageReports)}</div>
+        <div class="stack-list compact-list">${renderStageReports(detail.stageReports)}</div>
       </div>
 
-      ${renderSensitiveRequests(session, currentUser?.id, sensitiveRequests)}
+      ${renderSensitiveRequests(detail.session, detail.sensitiveRequests)}
     </aside>
   `;
 }
 
 function renderChatPanelHead(session) {
-  const counterpart =
-    session.currentUserRole === "initiator" ? session.counterparty.displayName : session.initiator.displayName;
-  const counterpartSummary =
-    session.currentUserRole === "initiator"
-      ? getParticipantSummary(session, session.counterparty.id)
-      : getParticipantSummary(session, session.initiator.id);
+  const counterpart = getCounterpart(session);
+  const counterpartSummary = getParticipant(session, counterpart.id);
 
   return `
     <div class="chat-panel-head">
       <div class="chat-panel-identity">
         ${renderAvatar(counterpartSummary)}
         <div class="chat-panel-identity-copy">
-          <h4>${escapeHtml(counterpart)}</h4>
-          <p>当前状态：${escapeHtml(getPrechatStatusLabel(session.status))} · 第 ${escapeHtml(String(session.currentRound))} 轮</p>
+          <h4>${escapeHtml(counterpart.displayName)}</h4>
         </div>
-      </div>
-      <div class="chat-panel-badges">
-        <span class="badge ${escapeHtml(getPrechatStatusTone(session.status) === "ok" ? "promising" : "hold")}">${escapeHtml(
-          getPrechatStatusLabel(session.status)
-        )}</span>
       </div>
     </div>
   `;
@@ -490,11 +422,10 @@ function renderChatPanelHead(session) {
 
 function renderSession(detail) {
   const { session, turns, humanInputRequests } = detail;
-  const counterpart =
-    session.currentUserRole === "initiator" ? session.counterparty.displayName : session.initiator.displayName;
+  const counterpart = getCounterpart(session);
 
-  sessionHeroText.textContent = `你正在与 ${counterpart} 的 Twin 进行透明预沟通。`;
-  setStatus("saved", `当前状态：${getPrechatStatusLabel(session.status)}`);
+  sessionHeroText.textContent = `你正在与 ${counterpart.displayName} 的 Twin 进行透明预沟通。`;
+  setStatus("saved", `会话已加载 · ${getPrechatStatusLabel(session.status)}`);
 
   sessionShell.innerHTML = `
     ${renderTransparencyCard(session)}
@@ -507,21 +438,21 @@ function renderSession(detail) {
             ${
               turns.length
                 ? turns.map((turn) => renderTurn(turn, session)).join("")
-                : `<article class="chat-inline-notice-row"><p class="chat-inline-notice">当前还没有 Twin 消息。你可以先启动一轮预沟通。</p></article>`
+                : `<article class="chat-inline-notice-row"><p class="chat-inline-notice">当前还没有 Twin 消息。</p></article>`
             }
-            ${renderInlinePauseComposer(session, humanInputRequests)}
+            ${renderInlinePauseNotice(humanInputRequests)}
           </div>
           ${renderDirectComposer(session, humanInputRequests)}
         </div>
       </section>
-      ${renderSessionSidebar(detail)}
+      ${renderSidebar(detail)}
     </div>
   `;
 }
 
 async function loadSession() {
   if (!sessionId) {
-    sessionShell.innerHTML = renderEmptyState("缺少 sessionId", "请从匹配页或待办箱进入具体会话。");
+    sessionShell.innerHTML = renderEmptyState("缺少 sessionId", "请从匹配页、待办箱或所有会话进入具体会话。");
     setStatus("error", "缺少 sessionId。");
     return;
   }
@@ -548,8 +479,6 @@ sessionShell.addEventListener("click", async (event) => {
       await fetchJson(`/api/prechat/invitations/${encodeURIComponent(sessionId)}/accept`, { method: "POST" });
     } else if (action === "reject-invitation") {
       await fetchJson(`/api/prechat/invitations/${encodeURIComponent(sessionId)}/reject`, { method: "POST" });
-    } else if (action === "run-round") {
-      await fetchJson(`/api/prechat/sessions/${encodeURIComponent(sessionId)}/run-round`, { method: "POST" });
     } else if (action === "pause-session") {
       await fetchJson(`/api/prechat/sessions/${encodeURIComponent(sessionId)}/decision`, {
         method: "POST",
@@ -581,7 +510,7 @@ sessionShell.addEventListener("click", async (event) => {
 });
 
 sessionShell.addEventListener("submit", async (event) => {
-  const form = event.target.closest("[data-human-input-form], [data-direct-message-form]");
+  const form = event.target.closest("[data-direct-message-form]");
 
   if (!form) {
     return;
@@ -591,37 +520,23 @@ sessionShell.addEventListener("submit", async (event) => {
   const data = new FormData(form);
 
   try {
-    const isDirectMessage = form.hasAttribute("data-direct-message-form");
-
-    if (isDirectMessage) {
-      if (form.dataset.requestId) {
-        setStatus("saving", "正在发送本人消息并继续...");
-        await fetchJson(`/api/prechat/sessions/${encodeURIComponent(sessionId)}/human-input`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            requestId: form.dataset.requestId,
-            responseText: data.get("content")
-          })
-        });
-      } else {
-        setStatus("saving", "正在发送本人消息...");
-        await fetchJson(`/api/prechat/sessions/${encodeURIComponent(sessionId)}/manual-message`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            content: data.get("content")
-          })
-        });
-      }
-    } else {
-      setStatus("saving", "正在提交人工补充...");
+    if (form.dataset.requestId) {
+      setStatus("saving", "正在发送本人消息并继续...");
       await fetchJson(`/api/prechat/sessions/${encodeURIComponent(sessionId)}/human-input`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           requestId: form.dataset.requestId,
-          responseText: data.get("responseText")
+          responseText: data.get("content")
+        })
+      });
+    } else {
+      setStatus("saving", "正在发送本人消息...");
+      await fetchJson(`/api/prechat/sessions/${encodeURIComponent(sessionId)}/manual-message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: data.get("content")
         })
       });
     }
@@ -630,6 +545,21 @@ sessionShell.addEventListener("submit", async (event) => {
   } catch (error) {
     setStatus("error", `提交失败：${error.message}`);
   }
+});
+
+sessionShell.addEventListener("keydown", (event) => {
+  const textarea = event.target.closest('[data-direct-message-form] textarea');
+
+  if (!textarea) {
+    return;
+  }
+
+  if (event.key !== "Enter" || event.shiftKey) {
+    return;
+  }
+
+  event.preventDefault();
+  textarea.form?.requestSubmit();
 });
 
 logoutButton.addEventListener("click", () => logout());

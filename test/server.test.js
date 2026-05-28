@@ -6,6 +6,7 @@ import { createAppServer } from "../src/server.js";
 import {
   createPrechatSession,
   createUser,
+  getRawDatabaseForTests,
   resetDatabaseForTests,
   saveCurrentTwin,
   upsertMatch
@@ -407,7 +408,7 @@ test("生成 Phase 1 报告后会自动发起真实用户预沟通", async () =>
   assert.equal(reportResponse.body.report.prechatOverview.totalSessions, 0);
 
   const matches = await clientA.request("/api/matches");
-  const matchId = matches.body.matches.find((item) => item.counterpart.displayName === "浜堝畨").id;
+  const matchId = matches.body.matches.find((item) => item.counterpart.displayName === "予安").id;
   const plan = await clientA.request("/api/prechat/plan", {
     method: "POST",
     json: {

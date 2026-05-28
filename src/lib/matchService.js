@@ -9,7 +9,7 @@ import {
 import { buildPublicTwinSnapshot, scoreUserMatch } from "./phase2MatchEngine.js";
 
 function isBrokenName(value) {
-  return /^\?{2,}$/u.test(String(value || "").trim()) || /^�+$/u.test(String(value || "").trim());
+  return /^\?{2,}$/u.test(String(value || "").trim()) || /^\uFFFD+$/u.test(String(value || "").trim());
 }
 
 export function refreshMatchesForUser(userId) {

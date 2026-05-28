@@ -44,6 +44,24 @@ function canonicalPair(userAId, userBId) {
   return [userAId, userBId].sort();
 }
 
+function dedupeRowsBy(rows, getKey) {
+  const seen = new Set();
+  const nextRows = [];
+
+  for (const row of rows) {
+    const key = getKey(row);
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    nextRows.push(row);
+  }
+
+  return nextRows;
+}
+
 function isUuid(value) {
   return typeof value === "string" && value.length >= 16;
 }
@@ -55,7 +73,7 @@ function isBrokenPlaceholderText(value) {
     return true;
   }
 
-  return /^\?{2,}$/u.test(text) || /^�+$/u.test(text);
+  return /^\?{2,}$/u.test(text) || /^\uFFFD+$/u.test(text);
 }
 
 function initializeSchema(database) {
@@ -746,6 +764,20 @@ export function getCounterpartTwin(userId) {
 
 export function createPrechatSession({ matchId, initiatorUserId, counterpartyUserId }) {
   const database = getDatabase();
+  const existing = database
+    .prepare(`
+      SELECT *
+      FROM prechat_sessions
+      WHERE match_id = ?
+      ORDER BY updated_at DESC, created_at DESC
+      LIMIT 1
+    `)
+    .get(matchId);
+
+  if (existing) {
+    return getPrechatSessionForUser(existing.id, initiatorUserId);
+  }
+
   const id = crypto.randomUUID();
   const timestamp = nowIso();
 
@@ -798,14 +830,17 @@ export function updatePrechatSession(sessionId, patch) {
 
 export function listPrechatSessionsForUser(userId) {
   const database = getDatabase();
-  const rows = database
+  const rows = dedupeRowsBy(
+    database
     .prepare(`
       SELECT *
       FROM prechat_sessions
       WHERE initiator_user_id = ? OR counterparty_user_id = ?
       ORDER BY updated_at DESC
     `)
-    .all(userId, userId);
+    .all(userId, userId),
+    (row) => row.match_id
+  );
 
   return rows.map((row) => ({
     id: row.id,
@@ -1355,14 +1390,17 @@ export function listHumanInputRequests(sessionId) {
 
 export function getInboxForUser(userId) {
   const database = getDatabase();
-  const invitations = database
-    .prepare(`
-      SELECT *
-      FROM prechat_sessions
-      WHERE counterparty_user_id = ? AND status = 'awaiting_counterparty_acceptance'
-      ORDER BY created_at DESC
-    `)
-    .all(userId)
+  const invitations = dedupeRowsBy(
+    database
+      .prepare(`
+        SELECT *
+        FROM prechat_sessions
+        WHERE counterparty_user_id = ? AND status = 'awaiting_counterparty_acceptance'
+        ORDER BY updated_at DESC, created_at DESC
+      `)
+      .all(userId),
+    (row) => row.match_id
+  )
     .map((row) => ({
       id: row.id,
       type: "invitation",
@@ -1581,8 +1619,7 @@ export function getLatestOpenSessionForMatch(matchId) {
       SELECT *
       FROM prechat_sessions
       WHERE match_id = ?
-        AND status NOT IN ('rejected', 'completed')
-      ORDER BY updated_at DESC
+      ORDER BY updated_at DESC, created_at DESC
       LIMIT 1
     `)
     .get(matchId);
@@ -1602,6 +1639,21 @@ export function getLatestOpenSessionForMatch(matchId) {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+}
+
+export function rejectSiblingPendingInvitations(matchId, keepSessionId) {
+  const database = getDatabase();
+  const timestamp = nowIso();
+
+  database
+    .prepare(`
+      UPDATE prechat_sessions
+      SET status = 'rejected', updated_at = ?
+      WHERE match_id = ?
+        AND id <> ?
+        AND status = 'awaiting_counterparty_acceptance'
+    `)
+    .run(timestamp, matchId, keepSessionId);
 }
 
 export function getLatestTurnNumber(roundId) {

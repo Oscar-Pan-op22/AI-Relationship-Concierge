@@ -179,7 +179,9 @@ function serveStatic(requestPath, response) {
     return;
   }
 
-  sendText(response, 200, fs.readFileSync(filePath), getContentType(filePath));
+  sendText(response, 200, fs.readFileSync(filePath), getContentType(filePath), {
+    "Cache-Control": "no-store"
+  });
 }
 
 function buildReportFromTwin(userId, twin) {
