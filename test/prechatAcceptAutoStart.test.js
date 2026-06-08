@@ -116,6 +116,21 @@ function mockLlmSequence(sequence) {
   };
 }
 
+async function waitForAutomationIdle(client, sessionId, attempts = 20) {
+  let last = null;
+
+  for (let index = 0; index < attempts; index += 1) {
+    last = await client.request(`/api/prechat/sessions/${sessionId}`);
+    const runState = last.body?.session?.control?.automation?.runState || "idle";
+    if (!["queued", "running"].includes(runState)) {
+      return last;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 15));
+  }
+
+  return last;
+}
+
 async function registerAndLogin(client, email, displayName) {
   const response = await client.request("/api/auth/register", {
     method: "POST",
@@ -217,8 +232,160 @@ test("接受邀请后会直接自动开始预沟通", async () => {
 
   const accepted = await clientB.request(`/api/prechat/invitations/${sessionId}/accept`, { method: "POST" });
   assert.equal(accepted.status, 200);
+  assert.equal(["queued", "running", "idle"].includes(accepted.body.session.control.automation.runState), true);
 
-  const detail = await clientB.request(`/api/prechat/sessions/${sessionId}`);
+  const detail = await waitForAutomationIdle(clientB, sessionId);
   assert.equal(detail.status, 200);
   assert.equal(detail.body.turns.length >= 1, true);
+  assert.equal(detail.body.session.control.automation.source, "report_plan");
+});
+
+test("直接邀请流在接受后也会自动开始预沟通", async () => {
+  const clientA = createClient();
+  const clientB = createClient();
+
+  await registerAndLogin(clientA, "a@example.com", "雨涵");
+  await registerAndLogin(clientB, "b@example.com", "予安");
+  await saveTwinFor(clientA, buildTwin("雨涵", { cities: "上海" }));
+  await saveTwinFor(clientB, buildTwin("予安", { cities: "杭州" }));
+
+  const matches = await clientA.request("/api/matches");
+  const matchId = matches.body.matches.find((item) => item.counterpart.displayName === "予安").id;
+  const invitation = await clientA.request(`/api/matches/${matchId}/invite-prechat`, { method: "POST" });
+  const sessionId = invitation.body.session.id;
+
+  mockLlmSequence([
+    {
+      reply: "你好，我是雨涵的 Twin。看到我们都在认真考虑长期关系，我想先确认一下，你未来长期更倾向在哪个城市生活？",
+      is_sensitive_question: false,
+      sensitive_topic_category: null,
+      needs_sensitive_approval: false,
+      target_user_for_approval: null,
+      confirmed_facts: [],
+      open_questions: ["对方长期城市安排"],
+      risk_flags: [],
+      needs_human_input: { required: false },
+      recommendation: "pause_review"
+    },
+    {
+      summary: "直接邀请流已自动开启首轮预沟通。",
+      confirmed_facts: [],
+      unresolved_questions: ["对方长期城市安排"],
+      risk_summary: [],
+      next_action: "continue",
+      handoff_ready: false
+    }
+  ]);
+
+  const accepted = await clientB.request(`/api/prechat/invitations/${sessionId}/accept`, { method: "POST" });
+  assert.equal(accepted.status, 200);
+  assert.equal(["queued", "running", "idle"].includes(accepted.body.session.control.automation.runState), true);
+
+  const detail = await waitForAutomationIdle(clientB, sessionId);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.turns.length >= 1, true);
+  assert.equal(detail.body.session.control.automation.source, "direct_invite");
+
+  const firstTwinContents = detail.body.turns
+    .filter((turn) => String(turn.actorRole || "").endsWith("_twin"))
+    .map((turn) => turn.content);
+
+  const reopened = await clientB.request(`/api/prechat/sessions/${sessionId}`);
+  assert.equal(reopened.status, 200);
+
+  const reopenedTwinContents = reopened.body.turns
+    .filter((turn) => String(turn.actorRole || "").endsWith("_twin"))
+    .map((turn) => turn.content);
+
+  assert.deepEqual(reopenedTwinContents, firstTwinContents);
+  assert.equal(
+    reopenedTwinContents.filter((content) => content === reopenedTwinContents[0]).length,
+    1
+  );
+});
+
+test("用户显式勾选的预沟通目标即使双方字段一致，也会自动开启首轮", async () => {
+  const clientA = createClient();
+  const clientB = createClient();
+
+  await registerAndLogin(clientA, "a@example.com", "雨涵");
+  await registerAndLogin(clientB, "b@example.com", "予安");
+  await saveTwinFor(clientA, buildTwin("雨涵", { cities: "上海", relationshipGoal: "认真长期关系，希望以结婚为目标" }));
+  await saveTwinFor(clientB, buildTwin("予安", { cities: "上海", relationshipGoal: "认真长期关系，希望以结婚为目标" }));
+
+  const matches = await clientA.request("/api/matches");
+  const matchId = matches.body.matches.find((item) => item.counterpart.displayName === "予安").id;
+  const plan = await clientA.request("/api/prechat/plan", {
+    method: "POST",
+    json: {
+      matchIds: [matchId],
+      objectiveKeys: ["relationshipGoal"]
+    }
+  });
+  assert.equal(plan.status, 201);
+
+  const sessionId = plan.body.sessions[0].id;
+
+  mockLlmSequence([
+    {
+      reply: "我这边的关系目标是认真、长期地往结婚方向发展。你这边更看重长期稳定，还是也会把结婚放进考虑里？",
+      reply_topic_key: "relationshipGoal",
+      question_topic_key: "relationshipGoal",
+      is_sensitive_question: false,
+      sensitive_topic_category: null,
+      needs_sensitive_approval: false,
+      target_user_for_approval: null,
+      confirmed_facts: [
+        {
+          subjectUserId: "self",
+          key: "relationshipGoal",
+          value: "认真长期关系，希望以结婚为目标",
+          confidence: 0.95
+        }
+      ],
+      open_questions: ["对方关系目标"],
+      risk_flags: [],
+      needs_human_input: { required: false },
+      recommendation: "continue"
+    },
+    {
+      reply: "我这边也是认真长期关系，也会把结婚放进考虑里。",
+      reply_topic_key: "relationshipGoal",
+      question_topic_key: null,
+      is_sensitive_question: false,
+      sensitive_topic_category: null,
+      needs_sensitive_approval: false,
+      target_user_for_approval: null,
+      confirmed_facts: [
+        {
+          subjectUserId: "self",
+          key: "relationshipGoal",
+          value: "认真长期关系，希望以结婚为目标",
+          confidence: 0.95
+        }
+      ],
+      open_questions: [],
+      risk_flags: [],
+      needs_human_input: { required: false },
+      recommendation: "pause_review"
+    },
+    {
+      summary: "即使双方画像初看一致，系统仍按用户确认的目标自动开启了关系目标核实。",
+      confirmed_facts: [],
+      unresolved_questions: [],
+      risk_summary: [],
+      next_action: "pause_review",
+      handoff_ready: false
+    }
+  ]);
+
+  const accepted = await clientB.request(`/api/prechat/invitations/${sessionId}/accept`, { method: "POST" });
+  assert.equal(accepted.status, 200);
+  assert.equal(["queued", "running", "idle"].includes(accepted.body.session.control.automation.runState), true);
+
+  const detail = await waitForAutomationIdle(clientB, sessionId);
+  assert.equal(detail.status, 200);
+  assert.equal(["paused_review", "completed"].includes(detail.body.session.status), true);
+  assert.equal(detail.body.turns.length >= 2, true);
+  assert.match(detail.body.turns[0].content, /关系目标/u);
 });

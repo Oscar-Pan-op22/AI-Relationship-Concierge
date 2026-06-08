@@ -1,8 +1,7 @@
 import {
   escapeHtml,
   fetchJson,
-  getPrechatStatusLabel,
-  getPrechatStatusTone,
+  localizeDisplayText,
   logout,
   requireAuth
 } from "./common.js";
@@ -20,7 +19,7 @@ function renderMatches(matches) {
   if (!matches.length) {
     matchesList.innerHTML = `
       <article class="stack-item">
-        <p>还没有可展示的双边匹配。请先在另一个账号里也完成 Twin 建档。</p>
+        <p>当前还没有可发起预沟通的对象。你可以等待更多用户完成 Twin 建档，或先去“所有会话”查看已开始的预沟通。</p>
       </article>
     `;
     return;
@@ -34,23 +33,14 @@ function renderMatches(matches) {
             <strong>${escapeHtml(match.counterpart.displayName)}</strong>
             <span class="pill ok">${escapeHtml(String(match.score))} 分</span>
           </header>
-          <p><strong>资料标签：</strong>${escapeHtml(match.counterpart.profileLabel)}</p>
-          <p><strong>关系目标：</strong>${escapeHtml(match.counterpart.relationshipGoal || "未填写")}</p>
-          <p><strong>偏好城市：</strong>${escapeHtml(match.counterpart.cities || "未填写")}</p>
-          <p><strong>简介：</strong>${escapeHtml(match.counterpart.summary)}</p>
-          <p><strong>匹配判断：</strong>${escapeHtml(match.scoreLabel)}</p>
-          <p><strong>推荐理由：</strong>${escapeHtml((match.reasons || []).join("；") || "暂无")}</p>
-          ${
-            match.openSession
-              ? `<p><strong>当前状态：</strong><span class="pill ${escapeHtml(getPrechatStatusTone(match.openSession.status))}">${escapeHtml(getPrechatStatusLabel(match.openSession.status))}</span></p>`
-              : `<p><strong>当前状态：</strong>尚未开始预沟通</p>`
-          }
+          <p><strong>资料标签：</strong>${escapeHtml(localizeDisplayText(match.counterpart.profileLabel, "未填写"))}</p>
+          <p><strong>关系目标：</strong>${escapeHtml(localizeDisplayText(match.counterpart.relationshipGoal, "未填写"))}</p>
+          <p><strong>偏好城市：</strong>${escapeHtml(localizeDisplayText(match.counterpart.cities, "未填写"))}</p>
+          <p><strong>简介：</strong>${escapeHtml(localizeDisplayText(match.counterpart.summary, "暂无简介"))}</p>
+          <p><strong>匹配判断：</strong>${escapeHtml(localizeDisplayText(match.scoreLabel, "暂无"))}</p>
+          <p><strong>推荐理由：</strong>${escapeHtml((match.reasons || []).map((item) => localizeDisplayText(item)).filter(Boolean).join("；") || "暂无")}</p>
           <div class="page-actions">
-            ${
-              match.openSession
-                ? `<a class="secondary-button link-button" href="/prechat-session.html?sessionId=${encodeURIComponent(match.openSession.id)}">查看会话</a>`
-                : `<button class="primary-button" type="button" data-match-id="${escapeHtml(match.id)}">发起预沟通邀请</button>`
-            }
+            <button class="primary-button" type="button" data-match-id="${escapeHtml(match.id)}">发起预沟通邀请</button>
           </div>
         </article>
       `
@@ -59,10 +49,10 @@ function renderMatches(matches) {
 }
 
 async function loadMatches() {
-  setStatus("saving", "正在加载匹配列表...");
+  setStatus("saving", "正在加载可发起对象...");
   const { matches } = await fetchJson("/api/matches");
   renderMatches(matches);
-  setStatus("saved", `已加载 ${matches.length} 个匹配对象。`);
+  setStatus("saved", `已加载 ${matches.length} 个可发起对象`);
 }
 
 matchesList.addEventListener("click", async (event) => {
@@ -88,5 +78,7 @@ matchesList.addEventListener("click", async (event) => {
 
 logoutButton.addEventListener("click", () => logout());
 
-await requireAuth();
-await loadMatches();
+const auth = await requireAuth();
+if (auth) {
+  await loadMatches();
+}

@@ -23,7 +23,9 @@
           </div>
           <nav class="nav-links">
             <a class="secondary-button link-button" href="/">我的 Twin</a>
-            <a class="secondary-button link-button" href="/matches.html">双边匹配</a>
+            <a class="secondary-button link-button" href="/reports.html">匹配报告</a>
+            <a class="secondary-button link-button" href="/matches.html">可发起对象</a>
+            <a class="secondary-button link-button" href="/sessions.html">所有会话</a>
             <a class="secondary-button link-button" href="/inbox.html">待办箱</a>
             <button id="logout-button" class="secondary-button" type="button">退出登录</button>
           </nav>
@@ -36,7 +38,7 @@
             <div class="panel-head">
               <h2>当前 Twin</h2>
               <p>每个用户只有 1 个当前生效 Twin。保存时会自动生成内部版本快照。</p>
-              <p id="profile-state-text" class="status-text">当前 Twin 还没有保存。</p>
+              <p id="profile-state-text" class="status-text">当前 Twin 尚未保存。</p>
             </div>
 
             <div class="field-grid">
@@ -140,14 +142,6 @@
               <p>只保留 1 个当前 Twin，历史版本仅用于系统内部追踪。</p>
             </div>
             <div id="current-twin-shell" class="history-list"></div>
-          </div>
-
-          <div class="panel history-shell">
-            <div class="panel-head">
-              <h2>最近匹配报告</h2>
-              <p>这是 Phase 1 的个人匹配摘要，仍可用于回看画像和推荐结果。</p>
-            </div>
-            <div id="history-list" class="history-list"></div>
           </div>
         </section>
       </main>

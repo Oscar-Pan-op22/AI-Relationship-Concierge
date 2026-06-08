@@ -9,6 +9,41 @@ function normalizeList(value) {
     .filter(Boolean);
 }
 
+function looksLikeSmalltalkCityPollution(value) {
+  const text = String(value || "").trim();
+
+  if (!text) {
+    return false;
+  }
+
+  return /[！？?!]/u.test(text) || /(你具体|你呢|哪里|在哪|聊聊|哈喽|你好|感觉你|印象不错)/u.test(text);
+}
+
+function isLikelyCityToken(value) {
+  const text = String(value || "").trim();
+
+  if (!text) {
+    return false;
+  }
+
+  if (/(市|区|县|镇|乡|村|北京|上海|杭州|深圳|广州|苏州|南京|成都|重庆|武汉|西安|天津|宁波|厦门|青岛|长沙|珠海|海外)/u.test(text)) {
+    return true;
+  }
+
+  return text.length >= 2 && text.length <= 6 && !/(可以|接受|偏向|倾向|长期|生活|定居|希望|具体|哪里)/u.test(text);
+}
+
+export function sanitizePublicCities(value) {
+  const text = String(value || "").trim();
+
+  if (!text || looksLikeSmalltalkCityPollution(text)) {
+    return "";
+  }
+
+  const cities = [...new Set(normalizeList(text).filter(isLikelyCityToken))];
+  return cities.join("、");
+}
+
 function detectGoalBucket(value) {
   const text = normalizeText(value);
 
@@ -183,15 +218,16 @@ function buildTwinLabel(profile) {
   return parts.length ? parts.join(" · ") : "资料待进一步完善";
 }
 
-function buildPublicSummary(profile) {
+export function buildPublicSummary(profile) {
   const pieces = [];
+  const safeCities = sanitizePublicCities(profile.cities);
 
   if (profile.relationshipGoal) {
     pieces.push(`关系目标：${profile.relationshipGoal}`);
   }
 
-  if (profile.cities) {
-    pieces.push(`偏好城市：${profile.cities}`);
+  if (safeCities) {
+    pieces.push(`偏好城市：${safeCities}`);
   }
 
   if (profile.communicationStyle) {
@@ -202,21 +238,24 @@ function buildPublicSummary(profile) {
 }
 
 export function buildPublicTwinSnapshot(twin) {
+  const manualProfile = twin?.manualProfile || twin?.twinProfile || {};
+  const safeCities = sanitizePublicCities(manualProfile.cities || "");
+
   return {
     userId: twin.userId,
     twinVersionId: twin.twinVersionId,
     twinVersionNumber: twin.twinVersionNumber,
     displayName: twin.displayName,
-    relationshipGoal: twin.twinProfile.relationshipGoal || "",
-    cities: twin.twinProfile.cities || "",
-    profileLabel: buildTwinLabel(twin.twinProfile),
-    summary: buildPublicSummary(twin.twinProfile)
+    relationshipGoal: manualProfile.relationshipGoal || "",
+    cities: safeCities,
+    profileLabel: buildTwinLabel(manualProfile),
+    summary: buildPublicSummary(manualProfile)
   };
 }
 
 export function scoreUserMatch(currentTwin, counterpartTwin) {
-  const me = currentTwin.twinProfile;
-  const other = counterpartTwin.twinProfile;
+  const me = currentTwin.manualProfile || currentTwin.twinProfile;
+  const other = counterpartTwin.manualProfile || counterpartTwin.twinProfile;
   let score = 0;
   const reasons = [];
 
@@ -231,12 +270,12 @@ export function scoreUserMatch(currentTwin, counterpartTwin) {
     14
   );
 
-  const cityOverlap = sharedCities(me.cities, other.cities);
+  const cityOverlap = sharedCities(sanitizePublicCities(me.cities), sanitizePublicCities(other.cities));
 
   if (cityOverlap.length) {
     score += 10;
     reasons.push(`共享城市偏好：${cityOverlap.join("、")}`);
-  } else if (normalizeList(me.cities).length && normalizeList(other.cities).length) {
+  } else if (normalizeList(sanitizePublicCities(me.cities)).length && normalizeList(sanitizePublicCities(other.cities)).length) {
     score += 3;
     reasons.push("城市偏好暂未重叠，需要后续确认迁移意愿。");
   } else {

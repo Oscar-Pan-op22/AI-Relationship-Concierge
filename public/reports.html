@@ -3,17 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>同频 · 可发起对象</title>
+    <title>同频 · 匹配报告</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="page-shell">
       <header class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">同频 · 可发起对象</p>
-          <h1>选择尚未开始预沟通的对象</h1>
+          <p class="eyebrow">同频 · 匹配报告</p>
+          <h1>查看历史匹配报告与推荐结果</h1>
           <p class="hero-text">
-            这里展示的是其他已完成 Twin 建档、且还没有进入预沟通会话的真实用户。你可以直接发起 Twin-Twin 预沟通邀请。
+            这里集中展示你生成过的 Phase 1 匹配报告，方便回看 Twin 画像摘要、shortlist 结果与后续预沟通入口。
           </p>
         </div>
         <div class="hero-panel">
@@ -35,14 +35,14 @@
       <main class="single-column">
         <section class="panel report-shell">
           <div class="panel-head">
-            <h2>可发起对象</h2>
-            <p id="matches-status" class="status-text">正在加载可发起对象...</p>
+            <h2>报告列表</h2>
+            <p id="reports-status" class="status-text">正在加载匹配报告...</p>
           </div>
-          <div id="matches-list" class="stack-list"></div>
+          <div id="reports-list" class="history-list"></div>
         </section>
       </main>
     </div>
 
-    <script type="module" src="/matches.js"></script>
+    <script type="module" src="/reports.js"></script>
   </body>
 </html>

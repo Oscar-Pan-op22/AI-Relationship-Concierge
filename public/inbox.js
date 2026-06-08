@@ -1,4 +1,12 @@
-import { escapeHtml, fetchJson, logout, refreshInboxBadge, requireAuth } from "./common.js";
+import {
+  escapeHtml,
+  fetchJson,
+  getSensitiveTopicLabel,
+  localizeDisplayText,
+  logout,
+  refreshInboxBadge,
+  requireAuth
+} from "./common.js";
 
 const inboxList = document.querySelector("#inbox-list");
 const statusText = document.querySelector("#inbox-status");
@@ -7,6 +15,14 @@ const logoutButton = document.querySelector("#logout-button");
 function setStatus(state, message) {
   statusText.dataset.state = state;
   statusText.textContent = message;
+}
+
+function openSessionById(sessionId) {
+  if (!sessionId) {
+    return;
+  }
+
+  window.location.href = `/prechat-session.html?sessionId=${encodeURIComponent(sessionId)}`;
 }
 
 function renderInvitation(item) {
@@ -29,15 +45,17 @@ function renderInvitation(item) {
 
 function renderSensitiveRequest(item) {
   const requesterName = item.payload.requester?.displayName || "未知用户";
+  const summaryText =
+    localizeDisplayText(item.payload.summaryText, "需要你决定是否允许进入这一敏感议题。");
 
   return `
-    <article class="stack-item">
+      <article class="stack-item">
       <header>
-        <strong>敏感问题授权</strong>
-        <span class="pill sensitive">${escapeHtml(item.payload.topicCategory)}</span>
+        <strong>敏感议题授权</strong>
+        <span class="pill sensitive">${escapeHtml(getSensitiveTopicLabel(item.payload.topicCategory))}</span>
       </header>
       <p><strong>提问方：</strong>${escapeHtml(requesterName)}</p>
-      <p><strong>问题：</strong>${escapeHtml(item.payload.questionText)}</p>
+      <p><strong>说明：</strong>${escapeHtml(summaryText)}</p>
       <div class="page-actions">
         <button class="primary-button" type="button" data-action="approve-sensitive" data-id="${escapeHtml(item.payload.requestId)}">批准</button>
         <button class="secondary-button" type="button" data-action="reject-sensitive" data-id="${escapeHtml(item.payload.requestId)}">拒绝</button>
@@ -49,40 +67,68 @@ function renderSensitiveRequest(item) {
 
 function renderHumanInputRequest(item) {
   const isManualReview = item.payload.fieldKey === "manual_review";
-
-  if (isManualReview) {
-    return `
-      <article class="stack-item">
-        <header>
-          <strong>模型异常暂停</strong>
-          <span class="pill warn">系统兜底</span>
-        </header>
-        <p>这条会话已暂停：这一轮预沟通没有拿到稳定的模型输出。请进入会话页，用真人说明继续推进。</p>
-        <form class="inline-form" data-human-input-form data-session-id="${escapeHtml(item.payload.sessionId)}" data-request-id="${escapeHtml(item.payload.requestId)}">
-          <textarea name="responseText" rows="3" placeholder="可选：填写你希望下一轮重点确认的内容，再继续预沟通"></textarea>
-          <div class="page-actions">
-            <button class="primary-button" type="submit">提交说明并继续</button>
-            <a class="secondary-button link-button" href="/prechat-session.html?sessionId=${encodeURIComponent(item.payload.sessionId)}">查看会话</a>
-          </div>
-        </form>
-      </article>
-    `;
-  }
+  const counterpartName = item.payload.counterpart?.displayName || "对方";
+  const title = isManualReview ? "模型异常暂停" : `${counterpartName} · 人工补充信息`;
+  const pillLabel = isManualReview ? "系统兜底" : "需要本人补充";
+  const description = isManualReview
+    ? "这条会话已暂停：这一轮预沟通没有拿到稳定的模型输出，需要回到会话页用真人消息继续推进。"
+    : localizeDisplayText(item.payload.questionText, "需要你补充信息。");
 
   return `
-    <article class="stack-item">
+    <article
+      class="stack-item inbox-jump-card"
+      data-session-id="${escapeHtml(item.payload.sessionId)}"
+      role="link"
+      tabindex="0"
+      aria-label="打开需要人工补充的会话"
+    >
       <header>
-        <strong>人工补充信息</strong>
-        <span class="pill medium">需要本人补充</span>
+        <strong>${escapeHtml(title)}</strong>
+        <span class="pill ${isManualReview ? "warn" : "medium"}">${pillLabel}</span>
       </header>
-      <p>这条会话已暂停，等待你本人补充后继续：${escapeHtml(item.payload.questionText)}</p>
-      <form class="inline-form" data-human-input-form data-session-id="${escapeHtml(item.payload.sessionId)}" data-request-id="${escapeHtml(item.payload.requestId)}">
-        <textarea name="responseText" rows="3" placeholder="请输入需要补充的信息"></textarea>
-        <div class="page-actions">
-          <button class="primary-button" type="submit">提交补充</button>
-          <a class="secondary-button link-button" href="/prechat-session.html?sessionId=${encodeURIComponent(item.payload.sessionId)}">查看会话</a>
-        </div>
-      </form>
+      <p>${escapeHtml(description)}</p>
+    </article>
+  `;
+}
+
+function renderSessionReview(item) {
+  const counterpartName = item.payload.counterpart?.displayName || "对方";
+  const summary = localizeDisplayText(item.payload.summary, "预沟通已形成阶段结论，点击查看会话。");
+
+  return `
+    <article
+      class="stack-item inbox-jump-card"
+      data-session-id="${escapeHtml(item.payload.sessionId)}"
+      role="link"
+      tabindex="0"
+      aria-label="打开需要查看阶段结论的会话"
+    >
+      <header>
+        <strong>${escapeHtml(`${counterpartName} · 查看阶段结论`)}</strong>
+        <span class="pill low">查看结论</span>
+      </header>
+      <p>${escapeHtml(summary)}</p>
+    </article>
+  `;
+}
+
+function renderSessionPause(item) {
+  const counterpartName = item.payload.counterpart?.displayName || "对方";
+  const summary = localizeDisplayText(item.payload.summary, "当前预沟通已暂停，点击查看会话。");
+
+  return `
+    <article
+      class="stack-item inbox-jump-card"
+      data-session-id="${escapeHtml(item.payload.sessionId)}"
+      role="link"
+      tabindex="0"
+      aria-label="打开已暂停的会话"
+    >
+      <header>
+        <strong>${escapeHtml(`${counterpartName} · 会话已暂停`)}</strong>
+        <span class="pill warn">暂停提醒</span>
+      </header>
+      <p>${escapeHtml(summary)}</p>
     </article>
   `;
 }
@@ -96,6 +142,14 @@ function renderItem(item) {
     return renderSensitiveRequest(item);
   }
 
+  if (item.type === "session_review") {
+    return renderSessionReview(item);
+  }
+
+  if (item.type === "session_pause") {
+    return renderSessionPause(item);
+  }
+
   return renderHumanInputRequest(item);
 }
 
@@ -103,7 +157,7 @@ function renderInbox(items) {
   if (!items.length) {
     inboxList.innerHTML = `
       <article class="stack-item">
-        <p>当前没有待办事项。</p>
+        <p>当前没有需要你处理的待办事项。</p>
       </article>
     `;
     return;
@@ -117,68 +171,62 @@ async function loadInbox() {
   const { items } = await fetchJson("/api/inbox");
   renderInbox(items);
   await refreshInboxBadge(items.length);
-  setStatus("saved", `当前共有 ${items.length} 个待办。`);
+  setStatus("saved", `当前共有 ${items.length} 个待办事项`);
 }
 
 inboxList.addEventListener("click", async (event) => {
   const button = event.target.closest("button[data-action]");
 
-  if (!button) {
+  if (button) {
+    const { action, id } = button.dataset;
+
+    try {
+      setStatus("saving", "正在提交操作...");
+
+      if (action === "accept-invitation") {
+        const { session } = await fetchJson(`/api/prechat/invitations/${encodeURIComponent(id)}/accept`, {
+          method: "POST"
+        });
+        window.location.href = `/prechat-session.html?sessionId=${encodeURIComponent(session.id)}`;
+        return;
+      } else if (action === "reject-invitation") {
+        await fetchJson(`/api/prechat/invitations/${encodeURIComponent(id)}/reject`, { method: "POST" });
+      } else if (action === "approve-sensitive") {
+        await fetchJson(`/api/sensitive-requests/${encodeURIComponent(id)}/approve`, { method: "POST" });
+      } else if (action === "reject-sensitive") {
+        await fetchJson(`/api/sensitive-requests/${encodeURIComponent(id)}/reject`, { method: "POST" });
+      }
+
+      await loadInbox();
+    } catch (error) {
+      setStatus("error", `操作失败：${error.message}`);
+    }
     return;
   }
 
-  const { action, id } = button.dataset;
-
-  try {
-    setStatus("saving", "正在提交操作...");
-
-    if (action === "accept-invitation") {
-      const { session } = await fetchJson(`/api/prechat/invitations/${encodeURIComponent(id)}/accept`, {
-        method: "POST"
-      });
-      window.location.href = `/prechat-session.html?sessionId=${encodeURIComponent(session.id)}`;
-      return;
-    } else if (action === "reject-invitation") {
-      await fetchJson(`/api/prechat/invitations/${encodeURIComponent(id)}/reject`, { method: "POST" });
-    } else if (action === "approve-sensitive") {
-      await fetchJson(`/api/sensitive-requests/${encodeURIComponent(id)}/approve`, { method: "POST" });
-    } else if (action === "reject-sensitive") {
-      await fetchJson(`/api/sensitive-requests/${encodeURIComponent(id)}/reject`, { method: "POST" });
-    }
-
-    await loadInbox();
-  } catch (error) {
-    setStatus("error", `操作失败：${error.message}`);
+  const card = event.target.closest(".inbox-jump-card");
+  if (card?.dataset.sessionId) {
+    openSessionById(card.dataset.sessionId);
   }
 });
 
-inboxList.addEventListener("submit", async (event) => {
-  const form = event.target.closest("[data-human-input-form]");
+inboxList.addEventListener("keydown", (event) => {
+  const card = event.target.closest(".inbox-jump-card");
+  if (!card?.dataset.sessionId) {
+    return;
+  }
 
-  if (!form) {
+  if (event.key !== "Enter" && event.key !== " ") {
     return;
   }
 
   event.preventDefault();
-  const data = new FormData(form);
-
-  try {
-    setStatus("saving", "正在提交人工补充...");
-    await fetchJson(`/api/prechat/sessions/${encodeURIComponent(form.dataset.sessionId)}/human-input`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        requestId: form.dataset.requestId,
-        responseText: data.get("responseText")
-      })
-    });
-    await loadInbox();
-  } catch (error) {
-    setStatus("error", `提交失败：${error.message}`);
-  }
+  openSessionById(card.dataset.sessionId);
 });
 
 logoutButton.addEventListener("click", () => logout());
 
-await requireAuth();
-await loadInbox();
+const auth = await requireAuth();
+if (auth) {
+  await loadInbox();
+}

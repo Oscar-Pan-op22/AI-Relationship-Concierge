@@ -17,7 +17,3 @@ export function writeLlmTelemetry(event) {
     console.warn("[llm-telemetry] write_failed", error instanceof Error ? error.message : String(error));
   }
 }
-
-export function getLlmTelemetryPath() {
-  return resolveTelemetryPath();
-}

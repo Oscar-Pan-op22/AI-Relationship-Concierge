@@ -47,7 +47,6 @@ const samplePayload = {
 };
 
 const form = document.querySelector("#matching-form");
-const historyList = document.querySelector("#history-list");
 const currentTwinShell = document.querySelector("#current-twin-shell");
 const statusText = document.querySelector("#status-text");
 const profileStateText = document.querySelector("#profile-state-text");
@@ -264,7 +263,7 @@ function clearForm() {
   syncPreferenceValuesAvailability();
   currentTwin = null;
   currentTwinShell.innerHTML = "";
-  profileStateText.textContent = "当前 Twin 还没有保存。";
+  profileStateText.textContent = "当前 Twin 尚未保存。";
   syncPersistedSnapshot();
 setStatus("idle", "已清空表单。");
 }
@@ -273,7 +272,7 @@ function renderCurrentTwin() {
   if (!currentTwin) {
     currentTwinShell.innerHTML = `
       <article class="history-item">
-        <p>还没有当前 Twin。先填写资料并保存。</p>
+        <p>当前还没有 Twin。请先填写资料并保存。</p>
       </article>
     `;
     return;
@@ -293,34 +292,6 @@ function renderCurrentTwin() {
   `;
 }
 
-function renderHistory(reports) {
-  if (!reports.length) {
-    historyList.innerHTML = `
-      <article class="history-item">
-        <p>还没有匹配报告。保存 Twin 后即可生成。</p>
-      </article>
-    `;
-    return;
-  }
-
-  historyList.innerHTML = reports
-    .map(
-      (report) => `
-        <article class="history-item">
-          <header>
-            <strong>${escapeHtml(report.overview.headline || report.id)}</strong>
-            <span class="pill low">${escapeHtml(formatDateTime(report.createdAt))}</span>
-          </header>
-          <p>${escapeHtml(report.twinSummary?.summary || "暂无摘要。")}</p>
-          <div class="page-actions">
-            <button type="button" data-report-id="${escapeHtml(report.id)}">打开结果页</button>
-          </div>
-        </article>
-      `
-    )
-    .join("");
-}
-
 async function loadConfig() {
   const config = await fetchJson("/api/config");
   appConfig = config;
@@ -338,16 +309,11 @@ async function loadCurrentTwin() {
     fillFormFromTwin(twin.twinProfile);
     profileStateText.textContent = `当前 Twin 版本：v${twin.twinVersionNumber}`;
   } else {
-    profileStateText.textContent = "当前 Twin 还没有保存。";
+    profileStateText.textContent = "当前 Twin 尚未保存。";
   }
 
   syncPersistedSnapshot();
   renderCurrentTwin();
-}
-
-async function loadHistory() {
-  const { reports } = await fetchJson("/api/reports");
-  renderHistory(reports);
 }
 
 async function persistCurrentTwin(auto = false) {
@@ -420,14 +386,6 @@ preferenceContainer.addEventListener("change", (event) => {
   }
 });
 
-historyList.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-report-id]");
-
-  if (button) {
-    window.location.href = `/report.html?reportId=${encodeURIComponent(button.dataset.reportId)}`;
-  }
-});
-
 sampleButton.addEventListener("click", () => {
   fillFormFromTwin(samplePayload);
   scheduleAutoSave();
@@ -444,7 +402,8 @@ saveTwinButton.addEventListener("click", async () => {
 resetFormButton.addEventListener("click", () => clearForm());
 logoutButton.addEventListener("click", () => logout());
 
-await requireAuth();
-await loadConfig();
-await loadCurrentTwin();
-await loadHistory();
+const auth = await requireAuth();
+if (auth) {
+  await loadConfig();
+  await loadCurrentTwin();
+}

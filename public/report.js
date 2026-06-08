@@ -3,6 +3,10 @@ import {
   fetchJson,
   getPrechatStatusLabel,
   getPrechatStatusTone,
+  localizeDisplayList,
+  localizeDisplayText,
+  localizeStructuredValue,
+  logout,
   renderEmptyState,
   requireAuth
 } from "./common.js";
@@ -10,6 +14,7 @@ import {
 const reportShell = document.querySelector("#report-shell");
 const reportHeroText = document.querySelector("#report-hero-text");
 const reportProfileText = document.querySelector("#report-profile-text");
+const logoutButton = document.querySelector("#logout-button");
 
 const OBJECTIVE_OPTIONS = [
   { key: "relationshipGoal", label: "关系目标" },
@@ -29,7 +34,20 @@ function renderSimpleList(items, fallback) {
     return `<p class="summary compact">${escapeHtml(fallback)}</p>`;
   }
 
-  return `<ul class="plain-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+  return `<ul class="plain-list">${items.map((item) => `<li>${escapeHtml(localizeDisplayText(item))}</li>`).join("")}</ul>`;
+}
+
+function renderSentenceSeries(items, fallback = "暂无") {
+  const normalized = items
+    .map((item) => localizeDisplayText(item))
+    .filter(Boolean)
+    .map((item) => item.replace(/[。；、，\s]+$/u, ""));
+
+  if (!normalized.length) {
+    return escapeHtml(fallback);
+  }
+
+  return escapeHtml(`${normalized.join("；")}。`);
 }
 
 function renderTwinSummary(report) {
@@ -37,23 +55,25 @@ function renderTwinSummary(report) {
     <section class="report-section">
       <h3>Twin 画像摘要</h3>
       <div class="report-topline">
-        <span class="badge promising">${escapeHtml(report.twinSummary.profileLabel)}</span>
+        <span class="badge promising">${escapeHtml(localizeDisplayText(report.twinSummary.profileLabel, "暂无标签"))}</span>
       </div>
-      <p class="summary">${escapeHtml(report.twinSummary.summary)}</p>
+      <p class="summary">${escapeHtml(localizeDisplayText(report.twinSummary.summary, "暂无摘要"))}</p>
       ${renderSimpleList(report.twinSummary.anchors || [], "当前还没有足够的画像锚点。")}
     </section>
   `;
 }
 
 function renderRealitySummary(report) {
-  const selfItems = (report.realitySummary?.selfReality || []).map((item) => `${item.label}：${item.valueLabel}`);
+  const selfItems = (report.realitySummary?.selfReality || []).map(
+    (item) => `${localizeDisplayText(item.label)}：${localizeStructuredValue(item.valueLabel || item.value)}`
+  );
 
   return `
     <section class="report-section">
       <h3>现实条件摘要</h3>
       <div class="subsection">
         <strong>我的现实情况</strong>
-        ${renderSimpleList(selfItems, "这次还没有填写结构化现实条件。")}
+        ${renderSimpleList(selfItems, "当前还没有填写结构化现实条件。")}
       </div>
     </section>
   `;
@@ -71,23 +91,51 @@ function renderShortlist(report) {
             ? shortlist
                 .map((candidate) => {
                   const realityLine = (candidate.realitySummary || [])
-                    .map((item) => `${item.label}：${item.valueLabel}`)
+                    .map(
+                      (item) =>
+                        `${localizeDisplayText(item.label)}：${localizeStructuredValue(item.valueLabel || item.value)}`
+                    )
                     .join(" / ");
+                  const headerParts = [
+                    candidate.displayName,
+                    candidate.age ? `${candidate.age} 岁` : "",
+                    candidate.city || ""
+                  ].filter(Boolean);
+                  const metaParts = [
+                    candidate.occupation ? `职业：${localizeDisplayText(candidate.occupation)}` : "",
+                    candidate.verificationLevel ? `身份：${localizeDisplayText(candidate.verificationLevel)}` : ""
+                  ].filter(Boolean);
 
                   return `
                     <article class="stack-item">
                       <header>
-                        <strong>${escapeHtml(candidate.displayName)} · ${escapeHtml(String(candidate.age))} 岁 · ${escapeHtml(candidate.city)}</strong>
-                        ${renderPill(candidate.matchBandKey, candidate.matchBandLabel)}
+                        <strong>${escapeHtml(headerParts.join(" · "))}</strong>
+                        ${renderPill(candidate.matchBandKey, localizeDisplayText(candidate.matchBandLabel))}
                       </header>
-                      <p><strong>职业：</strong>${escapeHtml(candidate.occupation)} · <strong>认证：</strong>${escapeHtml(candidate.verificationLevel)}</p>
+                      ${
+                        metaParts.length
+                          ? `<p>${escapeHtml(metaParts.join(" · "))}</p>`
+                          : ""
+                      }
                       <p><strong>匹配分：</strong>${escapeHtml(String(candidate.matchScore))}/100</p>
-                      <p><strong>候选摘要：</strong>${escapeHtml(candidate.summary)}</p>
-                      <p><strong>亮点：</strong>${escapeHtml((candidate.highlights || []).join("、") || "暂无")}</p>
-                      <p><strong>现实条件：</strong>${escapeHtml(realityLine || "暂无")}</p>
-                      <p><strong>推荐理由：</strong>${escapeHtml((candidate.matchedReasons || []).join("、") || "暂无")}</p>
-                      <p><strong>需要留意：</strong>${escapeHtml((candidate.cautionPoints || []).join("、") || "当前没有明显结构性风险。")}</p>
-                      <p><strong>下一阶段重点：</strong>${escapeHtml((candidate.nextPhaseFocus || []).join("、") || "暂无")}</p>
+                      <p><strong>候选摘要：</strong>${escapeHtml(localizeDisplayText(candidate.summary, "暂无摘要"))}</p>
+                      ${
+                        (candidate.highlights || []).length
+                          ? `<p><strong>亮点：</strong>${escapeHtml(localizeDisplayList(candidate.highlights, "暂无"))}</p>`
+                          : ""
+                      }
+                      ${
+                        realityLine
+                          ? `<p><strong>现实条件：</strong>${escapeHtml(realityLine)}</p>`
+                          : ""
+                      }
+                      <p><strong>推荐理由：</strong>${escapeHtml(localizeDisplayList(candidate.matchedReasons, "暂无"))}</p>
+                      ${
+                        (candidate.cautionPoints || []).length
+                          ? `<p><strong>需要留意：</strong>${escapeHtml(localizeDisplayList(candidate.cautionPoints, "暂无"))}</p>`
+                          : ""
+                      }
+                      <p><strong>下一阶段重点：</strong>${renderSentenceSeries(candidate.nextPhaseFocus || [])}</p>
                     </article>
                   `;
                 })
@@ -100,7 +148,7 @@ function renderShortlist(report) {
 }
 
 function renderPrechatPlanner(matches, twin) {
-  const goals = twin?.twinProfile?.prechatGoals || {};
+  const goals = twin?.runtimeState?.prechatGoals || {};
   const selectedMatchIds = new Set(goals.selectedMatchIds || []);
   const selectedObjectiveKeys = new Set(
     Array.isArray(goals.selectedObjectiveKeys) && goals.selectedObjectiveKeys.length
@@ -131,7 +179,7 @@ function renderPrechatPlanner(matches, twin) {
                             value="${escapeHtml(match.id)}"
                             ${selectedMatchIds.has(match.id) ? "checked" : ""}
                           />
-                          ${escapeHtml(match.counterpart.displayName)} · ${escapeHtml(match.counterpart.profileLabel || "待补充画像")}
+                          ${escapeHtml(match.counterpart.displayName)} · ${escapeHtml(localizeDisplayText(match.counterpart.profileLabel, "待补充画像"))}
                         </label>
                       `
                     )
@@ -161,7 +209,7 @@ function renderPrechatPlanner(matches, twin) {
               </div>
             </form>
           `
-          : `<article class="stack-item"><p>当前还没有可进入真实预沟通的平台注册对象。请先让另一位用户完成 Twin 建档。</p></article>`
+            : `<article class="stack-item"><p>当前还没有可进入真实预沟通的平台注册对象。请先让另一位用户完成 Twin 建档。</p></article>`
       }
     </section>
   `;
@@ -213,9 +261,9 @@ function renderPrechatOverview(report) {
                         <strong>${escapeHtml(item.counterpart.displayName)}</strong>
                         <span class="pill ${escapeHtml(getPrechatStatusTone(item.status))}">${escapeHtml(getPrechatStatusLabel(item.status))}</span>
                       </header>
-                      <p><strong>标签：</strong>${escapeHtml(item.counterpart.profileLabel || "暂无")}</p>
-                      <p><strong>匹配判断：</strong>${escapeHtml(item.scoreLabel || "暂无")}</p>
-                      <p><strong>理由：</strong>${escapeHtml((item.reasons || []).join("、") || "暂无")}</p>
+                      <p><strong>标签：</strong>${escapeHtml(localizeDisplayText(item.counterpart.profileLabel, "暂无"))}</p>
+                      <p><strong>匹配判断：</strong>${escapeHtml(localizeDisplayText(item.scoreLabel, "暂无"))}</p>
+                      <p><strong>理由：</strong>${escapeHtml(localizeDisplayList(item.reasons, "暂无"))}</p>
                       <div class="page-actions">
                         <a class="secondary-button link-button" href="/prechat-session.html?sessionId=${encodeURIComponent(item.sessionId)}">查看会话</a>
                       </div>
@@ -223,7 +271,7 @@ function renderPrechatOverview(report) {
                   `
                 )
                 .join("")
-            : `<article class="stack-item"><p>你还没有确认任何 Twin-Twin 预沟通计划。</p></article>`
+            : `<article class="stack-item"><p>当前还没有确认任何 Twin-Twin 预沟通计划。</p></article>`
         }
       </div>
     </section>
@@ -247,7 +295,7 @@ function renderProfileGaps(report) {
                         <strong>${escapeHtml(gap.dimension)}</strong>
                         ${renderPill(gap.priority, gap.priorityLabel)}
                       </header>
-                      <p>${escapeHtml(gap.reason)}</p>
+                      <p>${escapeHtml(localizeDisplayText(gap.reason, "暂无说明"))}</p>
                     </article>
                   `
                 )
@@ -276,7 +324,7 @@ function renderSuggestedCompletions(report) {
                         <strong>${escapeHtml(item.label)}</strong>
                         ${renderPill("low", "选填建议")}
                       </header>
-                      <p>${escapeHtml(item.reason)}</p>
+                      <p>${escapeHtml(localizeDisplayText(item.reason, "暂无说明"))}</p>
                     </article>
                   `
                 )
@@ -298,7 +346,7 @@ function renderReport(report, matches, twin) {
       <span class="badge promising">${escapeHtml(report.phaseLabel)}</span>
     </div>
     <div class="score">${escapeHtml(String(report.overview.shortlistCount))} 人</div>
-    <p class="summary">${escapeHtml(report.overview.headline)}</p>
+    <p class="summary">${escapeHtml(localizeDisplayText(report.overview.headline, "暂无摘要"))}</p>
     <p class="summary">
       现实条件排除：${escapeHtml(String(report.overview.excludedByRealityCount))} 人 · 下一阶段就绪：${escapeHtml(String(report.overview.nextPhaseReadyCount))} 人
     </p>
@@ -319,7 +367,7 @@ function renderReport(report, matches, twin) {
       <section class="report-section">
         <h3>下一步建议</h3>
         <ul class="plain-list">
-          ${(report.nextSteps || []).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+          ${(report.nextSteps || []).map((step) => `<li>${escapeHtml(localizeDisplayText(step))}</li>`).join("")}
         </ul>
       </section>
     </div>
@@ -342,7 +390,7 @@ async function loadReportView(reportId) {
     ? `${report.twinSummary.displayName} · v${report.twinVersionNumber}`
     : report.twinSummary.displayName;
 
-  reportHeroText.textContent = report.overview.headline;
+  reportHeroText.textContent = localizeDisplayText(report.overview.headline, "匹配报告");
   reportProfileText.textContent = versionText;
   renderReport(report, matches, twin);
   bindPlannerForm(reportId);
@@ -388,15 +436,18 @@ function bindPlannerForm(reportId) {
 }
 
 const reportId = new URL(window.location.href).searchParams.get("reportId");
+logoutButton?.addEventListener("click", () => logout());
 
-await requireAuth();
+const auth = await requireAuth();
 
-if (!reportId) {
-  renderError("缺少 reportId。请返回首页重新生成匹配报告。");
-} else {
-  try {
-    await loadReportView(reportId);
-  } catch (error) {
-    renderError(error.message);
+if (auth) {
+  if (!reportId) {
+    renderError("缺少 reportId。请返回首页重新生成匹配报告。");
+  } else {
+    try {
+      await loadReportView(reportId);
+    } catch (error) {
+      renderError(error.message);
+    }
   }
 }

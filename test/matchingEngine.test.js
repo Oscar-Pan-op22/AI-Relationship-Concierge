@@ -62,3 +62,20 @@ test("Twin 画像摘要在核心字段明确时不应全部回退成未明确", 
   assert.notEqual(report.twinSummary.profileLabel, "未明确");
   assert.equal(report.twinSummary.anchors.some((item) => item.includes("未明确")), false);
 });
+
+test("丁克、不想要孩子 会被解析为不要孩子，而不是想要孩子", () => {
+  const report = buildMatchReport({
+    twinProfile: buildBaseProfile({
+      childrenPreference: "丁克，不想要孩子"
+    })
+  });
+
+  assert.equal(
+    report.twinSummary.anchors.some((item) => /孩子态度：.*不要孩子/u.test(item)),
+    true
+  );
+  assert.equal(
+    report.twinSummary.anchors.some((item) => /孩子态度：希望未来要孩子/u.test(item)),
+    false
+  );
+});

@@ -40,6 +40,113 @@ function stableStringify(value) {
   return JSON.stringify(value ?? {});
 }
 
+function getSessionParticipantRole(session, userId) {
+  return session?.initiatorUserId === userId ? "initiator" : "counterparty";
+}
+
+function getObjectivesCompletedReviewInboxEntry(session) {
+  const reviewInbox = session?.control?.reviewInbox;
+  const entry = reviewInbox?.objectivesCompleted;
+
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  return {
+    roundId: String(entry.roundId || "").trim() || null,
+    roundNumber: Number.isFinite(Number(entry.roundNumber)) ? Math.max(0, Number(entry.roundNumber)) : 0,
+    emittedAt: String(entry.emittedAt || "").trim() || null,
+    seenByRole: {
+      initiator: String(entry?.seenByRole?.initiator || "").trim() || null,
+      counterparty: String(entry?.seenByRole?.counterparty || "").trim() || null
+    }
+  };
+}
+
+function shouldShowObjectivesCompletedReviewInbox(session, latestRound, userId) {
+  if (!session || !latestRound) {
+    return false;
+  }
+
+  if (session.status !== "paused_review" || latestRound.stopReason !== "objectives_completed") {
+    return false;
+  }
+  return true;
+}
+
+function getPauseKindFromSessionAndRound(session, latestRound) {
+  const stopReason = String(latestRound?.stopReason || "").trim();
+
+  if (stopReason === "outstanding_twin_question_unanswered") {
+    return "outstanding_twin_question";
+  }
+
+  if (stopReason === "max_turns_reached") {
+    return "max_turns_reached";
+  }
+
+  if (stopReason === "paused_review") {
+    return session?.status === "active" ? "automation_stuck_active_round_paused" : "generic_paused_review";
+  }
+
+  return null;
+}
+
+function getPauseSummary(stopReason, pauseKind) {
+  if (stopReason === "outstanding_twin_question_unanswered" || pauseKind === "outstanding_twin_question") {
+    return "当前预沟通暂停，对方还有一个 Twin 问题未完成处理，点击查看会话。";
+  }
+
+  if (stopReason === "max_turns_reached" || pauseKind === "max_turns_reached") {
+    return "当前轮次已达到上限，预沟通暂停，点击进入会话查看最新进展。";
+  }
+
+  if (stopReason === "paused_review") {
+    return "当前预沟通已暂停，系统未继续自动推进，点击查看会话。";
+  }
+
+  return "当前预沟通已暂停，点击查看会话。";
+}
+
+function getPauseNoticeReviewInboxEntry(session) {
+  const reviewInbox = session?.control?.reviewInbox;
+  const entry = reviewInbox?.pauseNotice;
+
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  return {
+    roundId: String(entry.roundId || "").trim() || null,
+    roundNumber: Number.isFinite(Number(entry.roundNumber)) ? Math.max(0, Number(entry.roundNumber)) : 0,
+    stopReason: String(entry.stopReason || "").trim() || null,
+    pauseKind: String(entry.pauseKind || "").trim() || null,
+    emittedAt: String(entry.emittedAt || "").trim() || null,
+    seenByRole: {
+      initiator: String(entry?.seenByRole?.initiator || "").trim() || null,
+      counterparty: String(entry?.seenByRole?.counterparty || "").trim() || null
+    }
+  };
+}
+
+function shouldShowPauseNoticeReviewInbox(session, latestRound, userId) {
+  if (!session || !latestRound) {
+    return false;
+  }
+
+  const stopReason = String(latestRound.stopReason || "").trim();
+  if (stopReason === "deferred_model_retry") {
+    return false;
+  }
+  const isPauseLikeStop = ["outstanding_twin_question_unanswered", "paused_review", "max_turns_reached"].includes(stopReason);
+  const isEffectivePausedStatus = session.status === "paused_review";
+
+  if (!isEffectivePausedStatus || !isPauseLikeStop || stopReason === "objectives_completed") {
+    return false;
+  }
+  return true;
+}
+
 function canonicalPair(userAId, userBId) {
   return [userAId, userBId].sort();
 }
@@ -60,10 +167,6 @@ function dedupeRowsBy(rows, getKey) {
   }
 
   return nextRows;
-}
-
-function isUuid(value) {
-  return typeof value === "string" && value.length >= 16;
 }
 
 function isBrokenPlaceholderText(value) {
@@ -114,6 +217,7 @@ function initializeSchema(database) {
       twin_version_id TEXT NOT NULL,
       display_name TEXT NOT NULL,
       payload_json TEXT NOT NULL,
+      runtime_state_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -162,6 +266,7 @@ function initializeSchema(database) {
       status TEXT NOT NULL,
       current_round INTEGER NOT NULL DEFAULT 0,
       latest_stage_report_id TEXT,
+      control_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
@@ -267,6 +372,8 @@ function initializeSchema(database) {
 
   ensureColumn(database, "match_reports", "user_id", "TEXT");
   ensureColumn(database, "twin_profile_versions", "user_id", "TEXT");
+  ensureColumn(database, "prechat_sessions", "control_json", "TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn(database, "current_twin_state_users", "runtime_state_json", "TEXT NOT NULL DEFAULT '{}'");
   backfillTwinVersionUserIds(database);
   database.exec(`CREATE INDEX IF NOT EXISTS idx_reports_user ON match_reports(user_id, created_at DESC);`);
 }
@@ -349,6 +456,8 @@ function getDatabase() {
   ensureParentDir(databasePath);
 
   const database = new DatabaseSync(databasePath);
+  database.exec("PRAGMA journal_mode = WAL");
+  database.exec("PRAGMA busy_timeout = 5000");
   initializeSchema(database);
   seedCandidatePool(database);
 
@@ -367,12 +476,17 @@ function toCurrentTwin(row) {
     return null;
   }
 
+  const manualProfile = parseJson(row.payload_json, {});
+  const runtimeState = parseJson(row.runtime_state_json, {});
+
   return {
     userId: row.user_id,
     twinVersionId: row.twin_version_id,
     twinVersionNumber: row.version_number,
     displayName: row.display_name,
-    twinProfile: parseJson(row.payload_json, {}),
+    twinProfile: manualProfile,
+    manualProfile,
+    runtimeState,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -408,6 +522,29 @@ function toMatchRow(row, currentUserId) {
 
 export function getDatabasePath() {
   return resolveDatabasePath();
+}
+
+export function clearPrechatHistoryData() {
+  const database = getDatabase();
+  const tables = [
+    "conversation_turns",
+    "stage_reports",
+    "human_input_requests",
+    "sensitive_question_requests",
+    "prechat_rounds",
+    "prechat_sessions"
+  ];
+
+  database.exec("BEGIN");
+  try {
+    for (const table of tables) {
+      database.exec(`DELETE FROM ${table}`);
+    }
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 export function resetDatabaseForTests(databasePath = "") {
@@ -557,6 +694,7 @@ export function getCurrentTwin(userId) {
         current_twin_state_users.twin_version_id,
         current_twin_state_users.display_name,
         current_twin_state_users.payload_json,
+        current_twin_state_users.runtime_state_json,
         current_twin_state_users.created_at,
         current_twin_state_users.updated_at,
         twin_profile_versions.version_number
@@ -571,12 +709,16 @@ export function getCurrentTwin(userId) {
 }
 
 export function saveCurrentTwin(userId, twinProfile) {
+  return saveManualTwinProfile(userId, twinProfile);
+}
+
+export function saveManualTwinProfile(userId, twinProfile) {
   const database = getDatabase();
   const currentTwin = getCurrentTwin(userId);
   const payloadJson = stableStringify(twinProfile);
   const displayName = String(twinProfile?.displayName || "").trim() || "未命名用户";
 
-  if (currentTwin && stableStringify(currentTwin.twinProfile) === payloadJson) {
+  if (currentTwin && stableStringify(currentTwin.manualProfile) === payloadJson) {
     return currentTwin;
   }
 
@@ -605,12 +747,13 @@ export function saveCurrentTwin(userId, twinProfile) {
     database
       .prepare(`
         INSERT INTO current_twin_state_users (
-          user_id, twin_version_id, display_name, payload_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          user_id, twin_version_id, display_name, payload_json, runtime_state_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
           twin_version_id = excluded.twin_version_id,
           display_name = excluded.display_name,
           payload_json = excluded.payload_json,
+          runtime_state_json = COALESCE(current_twin_state_users.runtime_state_json, '{}'),
           updated_at = excluded.updated_at
       `)
       .run(
@@ -618,6 +761,7 @@ export function saveCurrentTwin(userId, twinProfile) {
         versionId,
         displayName,
         payloadJson,
+        JSON.stringify(currentTwin?.runtimeState || {}),
         currentTwin?.createdAt || timestamp,
         timestamp
       );
@@ -627,6 +771,35 @@ export function saveCurrentTwin(userId, twinProfile) {
     database.exec("ROLLBACK");
     throw error;
   }
+
+  return getCurrentTwin(userId);
+}
+
+export function saveTwinRuntimeState(userId, runtimePatch) {
+  const database = getDatabase();
+  const currentTwin = getCurrentTwin(userId);
+
+  if (!currentTwin) {
+    throw new Error("未找到当前 Twin。");
+  }
+
+  const nextRuntimeState = {
+    ...(currentTwin.runtimeState || {}),
+    ...(runtimePatch && typeof runtimePatch === "object" ? runtimePatch : {})
+  };
+  const nextRuntimeJson = JSON.stringify(nextRuntimeState);
+
+  if (stableStringify(currentTwin.runtimeState || {}) === nextRuntimeJson) {
+    return currentTwin;
+  }
+
+  database
+    .prepare(`
+      UPDATE current_twin_state_users
+      SET runtime_state_json = ?, updated_at = ?
+      WHERE user_id = ?
+    `)
+    .run(nextRuntimeJson, nowIso(), userId);
 
   return getCurrentTwin(userId);
 }
@@ -641,6 +814,7 @@ export function listMatchableUsers(excludedUserId) {
         users.display_name,
         current_twin_state_users.twin_version_id,
         current_twin_state_users.payload_json,
+        current_twin_state_users.runtime_state_json,
         twin_profile_versions.version_number
       FROM current_twin_state_users
       JOIN users ON users.id = current_twin_state_users.user_id
@@ -658,7 +832,9 @@ export function listMatchableUsers(excludedUserId) {
       displayName: row.display_name,
       twinVersionId: row.twin_version_id,
       twinVersionNumber: row.version_number,
-      twinProfile: parseJson(row.payload_json, {})
+      twinProfile: parseJson(row.payload_json, {}),
+      manualProfile: parseJson(row.payload_json, {}),
+      runtimeState: parseJson(row.runtime_state_json, {})
     }))
     .filter((user) => {
       const twinDisplayName = String(user.twinProfile?.displayName || user.displayName || "").trim();
@@ -762,7 +938,12 @@ export function getCounterpartTwin(userId) {
   };
 }
 
-export function createPrechatSession({ matchId, initiatorUserId, counterpartyUserId }) {
+export function createPrechatSession({
+  matchId,
+  initiatorUserId,
+  counterpartyUserId,
+  control = null
+}) {
   const database = getDatabase();
   const existing = database
     .prepare(`
@@ -781,11 +962,25 @@ export function createPrechatSession({ matchId, initiatorUserId, counterpartyUse
   const id = crypto.randomUUID();
   const timestamp = nowIso();
 
+  const initialControl =
+    control && typeof control === "object"
+      ? control
+      : {
+          manualPause: {
+            initiatorEnded: false,
+            counterpartyEnded: false,
+            messageCountByRole: {
+              initiator: 0,
+              counterparty: 0
+            }
+          }
+        };
+
   database
     .prepare(`
       INSERT INTO prechat_sessions (
-        id, match_id, initiator_user_id, counterparty_user_id, status, current_round, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+        id, match_id, initiator_user_id, counterparty_user_id, status, current_round, latest_stage_report_id, control_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)
     `)
     .run(
       id,
@@ -793,6 +988,7 @@ export function createPrechatSession({ matchId, initiatorUserId, counterpartyUse
       initiatorUserId,
       counterpartyUserId,
       "awaiting_counterparty_acceptance",
+      JSON.stringify(initialControl),
       timestamp,
       timestamp
     );
@@ -814,16 +1010,18 @@ export function updatePrechatSession(sessionId, patch) {
     status: patch.status ?? current.status,
     current_round: patch.currentRound ?? current.current_round,
     latest_stage_report_id: patch.latestStageReportId ?? current.latest_stage_report_id,
+    control_json:
+      patch.control != null ? JSON.stringify(patch.control) : current.control_json || JSON.stringify({}),
     updated_at: patch.updatedAt ?? nowIso()
   };
 
   database
     .prepare(`
       UPDATE prechat_sessions
-      SET status = ?, current_round = ?, latest_stage_report_id = ?, updated_at = ?
+      SET status = ?, current_round = ?, latest_stage_report_id = ?, control_json = ?, updated_at = ?
       WHERE id = ?
     `)
-    .run(next.status, next.current_round, next.latest_stage_report_id, next.updated_at, sessionId);
+    .run(next.status, next.current_round, next.latest_stage_report_id, next.control_json, next.updated_at, sessionId);
 
   return true;
 }
@@ -850,6 +1048,7 @@ export function listPrechatSessionsForUser(userId) {
     status: row.status,
     currentRound: row.current_round,
     latestStageReportId: row.latest_stage_report_id,
+    control: parseJson(row.control_json, {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }));
@@ -878,6 +1077,7 @@ export function getPrechatSessionForUser(sessionId, userId) {
     status: row.status,
     currentRound: row.current_round,
     latestStageReportId: row.latest_stage_report_id,
+    control: parseJson(row.control_json, {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -899,6 +1099,7 @@ export function getPrechatSessionById(sessionId) {
     status: row.status,
     currentRound: row.current_round,
     latestStageReportId: row.latest_stage_report_id,
+    control: parseJson(row.control_json, {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -940,6 +1141,19 @@ export function finishPrechatRound(roundId, { status, stopReason }) {
       WHERE id = ?
     `)
     .run(status, stopReason, timestamp, roundId);
+}
+
+export function updatePrechatRoundObjective(roundId, objective) {
+  const database = getDatabase();
+  const timestamp = nowIso();
+
+  database
+    .prepare(`
+      UPDATE prechat_rounds
+      SET objective_json = ?, updated_at = ?
+      WHERE id = ?
+    `)
+    .run(JSON.stringify(objective ?? {}), timestamp, roundId);
 }
 
 export function getPrechatRound(roundId) {
@@ -1029,6 +1243,27 @@ export function addConversationTurn({
   };
 }
 
+export function getConversationTurnById(turnId) {
+  const database = getDatabase();
+  const row = database.prepare(`SELECT * FROM conversation_turns WHERE id = ?`).get(turnId);
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    roundId: row.round_id,
+    turnNumber: row.turn_number,
+    actorUserId: row.actor_user_id,
+    actorRole: row.actor_role,
+    content: row.content,
+    metadata: parseJson(row.metadata_json, {}),
+    createdAt: row.created_at
+  };
+}
+
 export function listConversationTurns(sessionId) {
   const database = getDatabase();
   const rows = database
@@ -1051,6 +1286,32 @@ export function listConversationTurns(sessionId) {
     metadata: parseJson(row.metadata_json, {}),
     createdAt: row.created_at
   }));
+}
+
+export function updateConversationTurn(turnId, patch = {}) {
+  const database = getDatabase();
+  const current = database.prepare(`SELECT * FROM conversation_turns WHERE id = ?`).get(turnId);
+
+  if (!current) {
+    return null;
+  }
+
+  const next = {
+    content: patch.content ?? current.content,
+    metadata_json:
+      patch.metadata != null ? JSON.stringify(patch.metadata) : current.metadata_json || JSON.stringify({}),
+    id: turnId
+  };
+
+  database
+    .prepare(`
+      UPDATE conversation_turns
+      SET content = ?, metadata_json = ?
+      WHERE id = ?
+    `)
+    .run(next.content, next.metadata_json, next.id);
+
+  return getConversationTurnById(turnId);
 }
 
 export function saveExtractedFacts(sessionId, roundId, facts = [], sourceTurnId = null) {
@@ -1132,6 +1393,31 @@ export function createStageReport(sessionId, roundId, payload) {
     roundId,
     payload,
     createdAt: timestamp
+  };
+}
+
+export function updateStageReport(reportId, payload) {
+  const database = getDatabase();
+  const current = database.prepare(`SELECT * FROM stage_reports WHERE id = ?`).get(reportId);
+
+  if (!current) {
+    return null;
+  }
+
+  database
+    .prepare(`
+      UPDATE stage_reports
+      SET payload_json = ?
+      WHERE id = ?
+    `)
+    .run(JSON.stringify(payload ?? {}), reportId);
+
+  return {
+    id: current.id,
+    sessionId: current.session_id,
+    roundId: current.round_id,
+    payload,
+    createdAt: current.created_at
   };
 }
 
@@ -1435,7 +1721,9 @@ export function getInboxForUser(userId) {
         sessionId: row.session_id,
         questionText: row.question_text,
         topicCategory: row.topic_category,
-        requestingUserId: row.requesting_user_id
+        requestingUserId: row.requesting_user_id,
+        approvalKind: parseJson(row.metadata_json, {})?.approvalKind || "topic",
+        summaryText: parseJson(row.metadata_json, {})?.summaryText || ""
       }
     }))
     .filter((item) => {
@@ -1463,7 +1751,125 @@ export function getInboxForUser(userId) {
       }
     }));
 
-  return [...invitations, ...sensitive, ...humanInput].sort((left, right) =>
+  const pendingSessionIds = new Set([
+    ...humanInput.map((item) => item.payload.sessionId),
+    ...sensitive.map((item) => item.payload.sessionId)
+  ]);
+
+  const sessionReview = dedupeRowsBy(
+    database
+      .prepare(`
+        SELECT *
+        FROM prechat_sessions
+        WHERE (initiator_user_id = ? OR counterparty_user_id = ?)
+          AND status = 'paused_review'
+        ORDER BY updated_at DESC, created_at DESC
+      `)
+      .all(userId, userId)
+      .map((row) => ({
+        id: row.id,
+        matchId: row.match_id,
+        initiatorUserId: row.initiator_user_id,
+        counterpartyUserId: row.counterparty_user_id,
+        status: row.status,
+        currentRound: row.current_round,
+        latestStageReportId: row.latest_stage_report_id,
+        control: parseJson(row.control_json, {}),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }))
+      .map((session) => {
+        const latestRound = listPrechatRounds(session.id).slice().pop();
+
+        if (!shouldShowObjectivesCompletedReviewInbox(session, latestRound, userId)) {
+          return null;
+        }
+
+        const latestReport = listStageReports(session.id)[0];
+        const reviewEntry = getObjectivesCompletedReviewInboxEntry(session);
+
+        return {
+          id: `${session.id}:objectives_completed`,
+          type: "session_review",
+          createdAt:
+            reviewEntry?.emittedAt ||
+            latestRound?.updatedAt ||
+            latestReport?.createdAt ||
+            session.updatedAt ||
+            session.createdAt,
+          payload: {
+            sessionId: session.id,
+            reviewKind: "objectives_completed",
+            stopReason: "objectives_completed",
+            roundId: latestRound?.id || null,
+            roundNumber: latestRound?.roundNumber || 0,
+            summary: String(latestReport?.payload?.summary || "").trim()
+          }
+        };
+      })
+      .filter(Boolean),
+    (item) => item.id
+  );
+
+  const sessionPause = dedupeRowsBy(
+    database
+      .prepare(`
+        SELECT *
+        FROM prechat_sessions
+        WHERE (initiator_user_id = ? OR counterparty_user_id = ?)
+          AND status IN ('active', 'paused_review')
+        ORDER BY updated_at DESC, created_at DESC
+      `)
+      .all(userId, userId)
+      .map((row) => ({
+        id: row.id,
+        matchId: row.match_id,
+        initiatorUserId: row.initiator_user_id,
+        counterpartyUserId: row.counterparty_user_id,
+        status: row.status,
+        currentRound: row.current_round,
+        latestStageReportId: row.latest_stage_report_id,
+        control: parseJson(row.control_json, {}),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }))
+      .map((session) => {
+        const latestRound = listPrechatRounds(session.id).slice().pop();
+        if (!latestRound || pendingSessionIds.has(session.id)) {
+          return null;
+        }
+
+        if (latestRound.stopReason === "objectives_completed") {
+          return null;
+        }
+
+        if (!shouldShowPauseNoticeReviewInbox(session, latestRound, userId)) {
+          return null;
+        }
+
+        const pauseEntry = getPauseNoticeReviewInboxEntry(session);
+        const pauseKind = pauseEntry?.pauseKind || getPauseKindFromSessionAndRound(session, latestRound);
+        const stopReason = pauseEntry?.stopReason || latestRound.stopReason || null;
+
+        return {
+          id: `${session.id}:pause_notice`,
+          type: "session_pause",
+          createdAt: pauseEntry?.emittedAt || latestRound.updatedAt || session.updatedAt || session.createdAt,
+          payload: {
+            sessionId: session.id,
+            pauseKind,
+            stopReason,
+            roundId: latestRound.id || null,
+            roundNumber: latestRound.roundNumber || 0,
+            summary: getPauseSummary(stopReason, pauseKind)
+          }
+        };
+      })
+      .filter(Boolean),
+    (item) => item.id
+  );
+
+  return [...invitations, ...sensitive, ...humanInput, ...sessionReview, ...sessionPause].sort((left, right) =>
     right.createdAt.localeCompare(left.createdAt)
   );
 }
@@ -1636,6 +2042,7 @@ export function getLatestOpenSessionForMatch(matchId) {
     status: row.status,
     currentRound: row.current_round,
     latestStageReportId: row.latest_stage_report_id,
+    control: parseJson(row.control_json, {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -1667,68 +2074,6 @@ export function getLatestTurnNumber(roundId) {
     .get(roundId);
 
   return Number(row?.max_turn || 0);
-}
-
-export function getPendingSensitiveRequestForSession(sessionId) {
-  const database = getDatabase();
-  const row = database
-    .prepare(`
-      SELECT *
-      FROM sensitive_question_requests
-      WHERE session_id = ? AND status = 'pending'
-      ORDER BY created_at DESC
-      LIMIT 1
-    `)
-    .get(sessionId);
-
-  if (!row) {
-    return null;
-  }
-
-  return {
-    id: row.id,
-    sessionId: row.session_id,
-    roundId: row.round_id,
-    requestingUserId: row.requesting_user_id,
-    targetUserId: row.target_user_id,
-    questionText: row.question_text,
-    topicCategory: row.topic_category,
-    status: row.status,
-    createdAt: row.created_at,
-    resolvedAt: row.resolved_at,
-    metadata: parseJson(row.metadata_json, {})
-  };
-}
-
-export function getPendingHumanInputForSession(sessionId) {
-  const database = getDatabase();
-  const row = database
-    .prepare(`
-      SELECT *
-      FROM human_input_requests
-      WHERE session_id = ? AND status = 'pending'
-      ORDER BY created_at DESC
-      LIMIT 1
-    `)
-    .get(sessionId);
-
-  if (!row) {
-    return null;
-  }
-
-  return {
-    id: row.id,
-    sessionId: row.session_id,
-    roundId: row.round_id,
-    targetUserId: row.target_user_id,
-    fieldKey: row.field_key,
-    questionText: row.question_text,
-    status: row.status,
-    responseText: row.response_text,
-    createdAt: row.created_at,
-    resolvedAt: row.resolved_at,
-    metadata: parseJson(row.metadata_json, {})
-  };
 }
 
 export function countUsers() {

@@ -4,6 +4,7 @@ import {
   formatDateTime,
   getPrechatStatusLabel,
   getPrechatStatusTone,
+  localizeDisplayText,
   logout,
   requireAuth
 } from "./common.js";
@@ -76,7 +77,7 @@ function sortSessions(sessions) {
 }
 
 function renderSessionCard(session) {
-  const latestSummary = session.latestStageReport?.summary || "还没有阶段总结。";
+  const latestSummary = localizeDisplayText(session.latestStageReport?.summary, "当前还没有阶段总结。");
   const pinnedBadge = isPinned(session.id) ? '<span class="pill low session-pin-badge">已置顶</span>' : "";
 
   return `
@@ -106,7 +107,7 @@ function renderSessions(sessions) {
   if (!sessions.length) {
     sessionsList.innerHTML = `
       <article class="stack-item">
-        <p>当前还没有任何会话。你可以先从双边匹配里选择对象，或等待对方向你发起预沟通。</p>
+        <p>当前还没有任何会话。你可以先从“可发起对象”里选择对象，或等待对方向你发起预沟通。</p>
       </article>
     `;
     return;
@@ -202,7 +203,7 @@ async function loadSessions() {
 
   const { sessions } = await fetchJson("/api/prechat/sessions");
   renderSessions(sessions);
-  setStatus("saved", `已加载 ${sessions.length} 条会话。`);
+  setStatus("saved", `已加载 ${sessions.length} 条会话`);
 }
 
 logoutButton.addEventListener("click", () => logout());

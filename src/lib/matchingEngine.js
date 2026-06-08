@@ -213,6 +213,20 @@ function inferChildrenPreference(text) {
 
   if (
     includesAny(normalized, [
+      "不要孩子",
+      "不想要孩子",
+      "不想生孩子",
+      "明确不生",
+      "丁克",
+      "childfree",
+      "no children"
+    ])
+  ) {
+    return { value: "no_children", label: VALUE_LABELS.childrenPreference.no_children };
+  }
+
+  if (
+    includesAny(normalized, [
       "想要孩子",
       "希望未来要孩子",
       "未来要孩子",
@@ -223,12 +237,6 @@ function inferChildrenPreference(text) {
     ])
   ) {
     return { value: "wants_children", label: VALUE_LABELS.childrenPreference.wants_children };
-  }
-
-  if (
-    includesAny(normalized, ["不要孩子", "丁克", "明确不生", "childfree", "no children"])
-  ) {
-    return { value: "no_children", label: VALUE_LABELS.childrenPreference.no_children };
   }
 
   if (

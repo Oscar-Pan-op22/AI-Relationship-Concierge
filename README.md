@@ -1,24 +1,16 @@
 # 同频
 
-`同频` 是一个以 `Twin` 为核心的关系筛选与预沟通原型。
+`同频` 是一个以 `Twin` 为核心的关系筛选与透明预沟通原型。
 
-当前仓库已经从早期的单用户 `Phase 1` 工作台，演进到 `Phase 2` 的双真实用户版本：
-
-- 用户登录后维护自己唯一的当前 `Twin`
-- 生成 `Phase 1` 初筛报告与 shortlist
-- 在真实用户之间建立双边匹配
-- 发起并接受 `Twin-Twin` 透明预沟通
-- 对敏感问题做逐题授权
-- 在待办箱里处理邀请、授权和人工补充
-- 在会话页里查看透明线程，并允许真人直接接管发消息
+当前仓库运行的是 `Phase 2`：双真实用户、双侧 `Twin`、自动化 `Twin-Twin` 预沟通、敏感议题授权、人工接管与阶段总结。
 
 ## 当前能力
 
 ### 1. 账号与 Twin
 
-- 最小真实登录：注册、登录、登出
+- 注册、登录、登出
 - 每个用户只有 1 个当前 `Twin`
-- 每次保存都会生成内部版本快照
+- 每次保存 `Twin` 都会生成内部版本快照
 - `Twin` 支持：
   - 关系目标
   - 偏好城市
@@ -27,34 +19,51 @@
   - 孩子与生育态度
   - 家庭边界
   - 财务观
+  - 必须满足项 / 硬性雷区
   - 敏感议题授权
   - 结构化现实条件
 
 ### 2. Phase 1 初筛
 
-- 基于 `Twin` 画像生成匹配报告
-- 输出 shortlist、风险点、现实条件摘要、画像缺口和下一步建议
-- 支持在报告页确认下一阶段预沟通对象与目标
+- 基于当前 `Twin` 生成匹配报告
+- 输出：
+  - `Twin` 画像摘要
+  - shortlist
+  - 现实条件摘要
+  - 画像缺口
+  - 下一步建议
+- 报告是 **Twin 版本快照**
+  - 修改 `Twin` 后，旧报告不会自动更新
+  - 需要重新生成报告，才会读取最新 `Twin`
 
-### 3. Phase 2 预沟通
+### 3. Phase 2 真实用户预沟通
 
-- 双真实用户匹配
-- 透明的 `Twin-Twin` 预沟通线程
-- 自动推进非敏感问题
-- 敏感问题逐题授权
-- 人工补充与模型异常暂停
-- “所有会话”与“待办箱”统一管理
-- 真人可直接在会话详情页发消息，重新激活已完成会话
+- 真实用户之间建立双边匹配
+- 发起、接受和拒绝预沟通邀请
+- `Twin-Twin` 自动推进非敏感议题
+- 敏感议题逐题授权
+- 人工补充、真人直接发消息、手动结束推进
+- 会话详情页展示透明线程、阶段总结、议题进展和对方已确认事实
 
-### 4. LLM 接入
+### 4. 阶段总结
 
-- 当前默认走 `vLLM OpenAI-compatible API`
+- 会话内会生成阶段报告 `stage report`
+- 阶段总结默认按 **当前查看者视角** 展示
+  - 看到的是“关于对方”的总结
+- 总结格式已统一为：
+  - `议题：结论；议题：结论`
+- 总结覆盖对方所有已确认事实，不只看当前 round scope
+
+### 5. LLM 接入
+
+- 默认走 `vLLM OpenAI-compatible API`
 - 已实现：
   - `chat.completions` 调用
   - JSON 提取与修复
   - schema 校验
-  - retry / fallback
+  - fallback / retry
   - telemetry 日志
+- 纯模型不稳定类失败会优先走静默恢复，而不是立即可见暂停
 
 ## 技术栈
 
@@ -69,27 +78,40 @@
 public/
   auth.html / auth.js              登录与注册
   index.html / app.js              当前 Twin 编辑页
-  report.html / report.js          Phase 1 匹配结果页
-  matches.html / matches.js        双边匹配页
-  inbox.html / inbox.js            待办箱
+  reports.html / reports.js        历史匹配报告列表
+  report.html / report.js          单条匹配报告详情
+  matches.html / matches.js        可发起对象页
   sessions.html / sessions.js      所有会话
+  inbox.html / inbox.js            待办箱
   prechat-session.html / .js       预沟通会话详情
+  fact-utils.js                    会话事实净化与去重
+  common.js                        前端公共工具
   styles.css                       全局样式
 
 src/
   server.js                        HTTP 服务与 API 路由
   lib/
     auth.js                        登录与 session
+    constants.js                   常量与枚举
     database.js                    SQLite 持久化
     matchingEngine.js              Phase 1 匹配引擎
-    phase2MatchEngine.js           双边匹配逻辑
-    prechatService.js              预沟通状态机
+    matchService.js                Phase 2 匹配构建
+    phase2MatchEngine.js           双边匹配评分与公开快照
+    prechatService.js              预沟通状态机与自动恢复
     llmAdapter.js                  vLLM / OpenAI-compatible 适配层
     llmSchemas.js                  模型输出 schema 校验
-    llmTelemetry.js                调用 telemetry
+    llmTelemetry.js                LLM telemetry
+    mockCandidatePool.js           Phase 1 mock 候选池
 
 scripts/
-  test_vllm_connectivity.py        vLLM 连通性测试脚本
+  test_vllm_connectivity.py        vLLM OpenAI-compatible 连通性测试
+  reset_and_restart_prechat.py     清空历史预沟通并重启 Twin-Twin 自动化
+  regenerate_prechat_summaries.py  重算阶段总结，不推进预沟通
+  restart_prechat_helper.mjs       重启预沟通 helper
+  regenerate_prechat_summaries_helper.mjs
+                                   阶段总结重算 helper
+  recover_mirror_quality_pauses.js 历史 mirror quality pause 恢复脚本
+  repair-polluted-cities.js        历史 cities 脏数据修复脚本
 
 test/
   *.test.js                        单元与集成测试
@@ -101,21 +123,77 @@ test/
 npm.cmd start
 ```
 
-启动后打开：
+默认地址：
 
 ```text
 http://localhost:3000
 ```
 
+健康检查：
+
+```text
+GET /api/health
+```
+
 ## 测试
+
+跑全量测试：
 
 ```bash
 npm.cmd test
 ```
 
+或：
+
+```bash
+node --test
+```
+
+## 关键页面
+
+- `/`：当前 `Twin` 编辑页
+- `/reports.html`：历史匹配报告列表
+- `/report.html?reportId=...`：单条匹配报告
+- `/matches.html`：可发起对象
+- `/sessions.html`：所有预沟通会话
+- `/inbox.html`：待办箱
+- `/prechat-session.html?sessionId=...`：预沟通会话详情
+
+## 常用维护脚本
+
+### 1. 测试 vLLM 连通性
+
+```bash
+python scripts\test_vllm_connectivity.py --base-url http://100.91.101.3:8003/v1 --verbose
+```
+
+### 2. 清空历史预沟通并重启
+
+本地服务已启动时，优先异步调用服务端接口：
+
+```bash
+python scripts\reset_and_restart_prechat.py --server-async
+```
+
+如果本地服务不可用，脚本会退回本地清库 + helper 重启。
+
+### 3. 重算阶段总结，不影响 Twin-Twin 预沟通
+
+重算单个会话：
+
+```bash
+python scripts\regenerate_prechat_summaries.py --session-id <SESSION_ID>
+```
+
+重算全部会话：
+
+```bash
+python scripts\regenerate_prechat_summaries.py --all
+```
+
 ## LLM 环境变量
 
-当前默认值已经指向现有 vLLM，但也可以覆盖：
+当前默认值已经指向现有 vLLM，也可以覆盖：
 
 ```bash
 LLM_PROVIDER=vllm_openai
@@ -128,32 +206,63 @@ LLM_MAX_RETRIES=1
 
 ## 数据文件
 
-运行时数据默认写到 `data/`：
+运行时默认写到 `data/`：
 
 - `tongpin.sqlite`
 - `llm-events.jsonl`
+- `prechat-reset-jobs/`
 
-这些文件都不会提交到 Git。
+常见备份文件也会落在 `data/`，例如：
 
-## 当前状态说明
+- `tongpin.sqlite.bak-*`
 
-这个仓库目前是一个 `Phase 2 原型`，已经具备完整主链路，但仍有明确边界：
+## 当前行为约定
 
-- 已完成：
-  - 真实登录
-  - Twin 建档
-  - 初筛报告
-  - 双边匹配
-  - Twin-Twin 预沟通
-  - 敏感问题授权
-  - 会话与待办管理
-- 尚未完成：
-  - 生产级账号体系
-  - 图片头像上传
-  - WebSocket 实时同步
-  - 完整真人聊天产品
-  - 生产级风控与审核后台
+### 报告与版本
 
-## 说明
+- `match report` 是 `Twin` 快照，不会自动追随最新画像
+- 重新生成报告后，才会读取当前 `Twin`
 
-仓库里保留了少量历史兼容逻辑，用于识别旧数据库里的坏名称或乱码数据；用户可见页面和主流程代码已经统一清理为 UTF-8 中文。
+### 阶段总结视角
+
+- `session list`
+- `inbox session_review`
+- `session detail`
+
+以上页面里的阶段总结，默认都应展示“关于对方”的总结，而不是“关于自己”的总结。
+
+### 预沟通自动化
+
+- 非敏感议题自动推进
+- 敏感议题先授权
+- 纯模型不稳定优先静默恢复
+- 业务性暂停仍保留可见待办
+
+## 已知边界
+
+这是一个 `Phase 2` 原型，不是生产系统。
+
+已完成：
+
+- 真实登录
+- Twin 建档
+- Phase 1 初筛报告
+- 真实用户 shortlist
+- 双边匹配
+- Twin-Twin 预沟通
+- 敏感议题授权
+- 会话 / 待办管理
+- 人工接管
+
+未完成：
+
+- 生产级账号体系
+- 多端实时同步
+- 文件与头像上传
+- 完整审核后台
+- 生产级风控 / 监控 / 运维体系
+
+## 备注
+
+- 仓库里仍保留少量历史兼容和运行时自愈逻辑，用于吸收旧数据库里的脏 turn、乱码文本和错误 metadata。
+- 当前主流程与用户可见页面以 UTF-8 中文为准。
